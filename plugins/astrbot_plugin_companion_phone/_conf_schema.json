@@ -1,0 +1,110 @@
+{
+  "enabled": {
+    "description": "启用备用机工具",
+    "type": "bool",
+    "default": true
+  },
+  "qq_comment_consent": {
+    "description": "允许在官方QQ空间评论与回复评论，须确认评论框，合计每天10次、至少间隔60秒；不开放其他应用评论",
+    "type": "bool",
+    "default": false
+  },
+  "initiative_enabled": {
+    "description": "持续主动模式：在已有应用和空间授权内自行选择活动，不要求管理员固定口令；不扩大对外互动权限",
+    "type": "bool",
+    "default": false
+  },
+  "autonomous_quiet_seconds": {
+    "description": "管理员安静多久后可自主浏览，最低300秒",
+    "type": "int",
+    "default": 900
+  },
+  "qzone_enabled": {
+    "description": "持续授权：小号QQ空间自主发布，所有人可见，每天最多5条；可自行搜索公开可用配图",
+    "type": "bool",
+    "default": false
+  },
+  "autonomous_interactive": {
+    "description": "在获准应用内自主打开内容、搜索、阅读、播放和保存图片",
+    "type": "bool",
+    "default": false
+  },
+  "autonomous_like_consent": {
+    "description": "允许在获准应用内自主点赞（每天最多10次）",
+    "type": "bool",
+    "default": false
+  },
+  "autonomous_share_enabled": {
+    "description": "允许把浏览中有趣内容主动分享给管理员，每天最多3条",
+    "type": "bool",
+    "default": false
+  },
+  "album_share_scope": {
+    "description": "相册分享范围：disabled / shared_album / all",
+    "type": "string",
+    "default": "disabled"
+  },
+  "share_album_name": {
+    "description": "专门分享相册的名称",
+    "type": "string",
+    "default": "小鲸鱼可分享"
+  },
+  "installed_app_names": {
+    "description": "部署时核实的应用包名到名称映射",
+    "type": "dict",
+    "default": {}
+  },
+  "allow_model_screen": {
+    "description": "允许在管理员交代的手机任务中将截图发送至当前模型 API 识别",
+    "type": "bool",
+    "default": false
+  },
+  "autonomous_enabled": {
+    "description": "启用自主只读浏览",
+    "type": "bool",
+    "default": false
+  },
+  "rhythm_enabled": {
+    "description": "成长作息：根据精力、兴趣和多日真实经历安排活动，无需填写固定作息窗口",
+    "type": "bool",
+    "default": true
+  },
+  "autonomous_screen_consent": {
+    "description": "已允许在白名单软件内自主截图并交给模型识别",
+    "type": "bool",
+    "default": false
+  },
+  "autonomous_apps": {
+    "description": "自主软件包名，目前支持com.tencent.mobileqq和com.coolapk.market",
+    "type": "list",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  },
+  "autonomous_daily_limit": {
+    "description": "每天后台自主访问次数；聊天明确要求不占用（0 不限）",
+    "type": "int",
+    "default": 10
+  },
+  "autonomous_session_seconds": {
+    "description": "每次访问最长秒数（30至600）",
+    "type": "int",
+    "default": 600
+  },
+  "autonomous_max_views": {
+    "description": "每次最多观察次数（0 不限，仍受单次时长限制）",
+    "type": "int",
+    "default": 0
+  },
+  "owner_qq": {
+    "description": "管理员 QQ",
+    "type": "string",
+    "default": "100000001"
+  },
+  "platform_id": {
+    "description": "QQ 平台 ID",
+    "type": "string",
+    "default": "qq-companion"
+  }
+}
