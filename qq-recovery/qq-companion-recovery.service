@@ -1,0 +1,22 @@
+[Unit]
+Description=QQ companion connection diagnostics and manual recovery
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/qq-companion/qq-recovery
+ExecStart=/usr/bin/python3 /opt/qq-companion/qq-recovery/server.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/qq-companion/recovery-data
+ProtectHome=true
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
