@@ -1,0 +1,11 @@
+{
+  "enabled": {"type": "bool", "description": "开启主动聊天", "default": true},
+  "owner_qq": {"type": "string", "description": "唯一接收主动消息的 QQ", "default": "100000001"},
+  "platform_id": {"type": "string", "description": "平台 ID", "default": "qq-companion"},
+  "persona_id": {"type": "string", "description": "角色卡", "default": "小鲸鱼"},
+  "provider_id": {"type": "string", "description": "模型", "default": "deepseek/deepseek-flash"},
+  "daily_limit": {"type": "int", "description": "每日主动次数上限", "default": 4},
+  "min_interval_hours": {"type": "float", "description": "距离上次聊天至少几小时", "default": 2.0},
+  "start_hour": {"type": "int", "description": "北京时间起始小时", "default": 9},
+  "end_hour": {"type": "int", "description": "北京时间截止小时", "default": 23}
+}

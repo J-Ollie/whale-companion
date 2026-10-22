@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_active
+display_name: 小鲸鱼主动私聊
+desc: 仅向主 QQ 主动聊天，由模型决定是否开口；支持时段、频率和免打扰控制。
+version: v1.2.0
+author: local
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.29,<5"

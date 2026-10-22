@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_friends
+display_name: 小鲸鱼好友审批
+desc: 好友申请通知管理员明确审批，仅真实好友可私聊，好友无管理员工具权限。
+version: 1.3.0
+author: Local
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.29,<5"

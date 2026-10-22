@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_batch
+display_name: 私聊合并与自然收尾
+desc: 为管理员与已验证好友私聊分人合并消息，结合各自上下文自然收尾。
+version: v1.2.1
+author: local
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.29,<5"

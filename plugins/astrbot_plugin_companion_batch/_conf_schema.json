@@ -1,0 +1,37 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "启用连续消息合并",
+    "default": true
+  },
+  "platform_id": {
+    "type": "string",
+    "description": "机器人平台 ID",
+    "default": "qq-companion"
+  },
+  "owner_qq": {
+    "type": "string",
+    "description": "合并消息的主 QQ",
+    "default": "100000001"
+  },
+  "quiet_seconds": {
+    "type": "float",
+    "description": "最后一条消息后等待秒数",
+    "default": 5.0
+  },
+  "max_seconds": {
+    "type": "float",
+    "description": "一批连续消息最多等待秒数",
+    "default": 15.0
+  },
+  "natural_closure": {
+    "type": "bool",
+    "description": "结合上下文，允许对自然收尾的简短确认不再回复",
+    "default": true
+  },
+  "closure_provider_id": {
+    "type": "string",
+    "description": "收尾判断模型（失败时照常回复）",
+    "default": "deepseek/deepseek-flash"
+  }
+}

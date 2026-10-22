@@ -1,0 +1,5 @@
+{
+  "owner_qq":{"type":"string","default":"100000001","description":"唯一审批管理员"},
+  "bot_qq":{"type":"string","default":"100000002","description":"机器人QQ"},
+  "platform_id":{"type":"string","default":"qq-companion","description":"QQ平台实例"}
+}
