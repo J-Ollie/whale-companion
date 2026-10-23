@@ -19,10 +19,10 @@ AstrBot 4.29.x
 
 ## 模块索引
 
-源码位于 `plugins/`，管理中心位于 `qq-recovery/`，插件测试位于 `tests/`。
+源码位于 `astrbot-plugins/`，管理中心位于 `management-center/`，插件测试位于 `tests/`。
 
 - 记忆插件的 `memory.py / cognition.py / profile.py` 管理持久化记录、检索与共享身份；`main.py` 接入 AstrBot 事件。
-- 好友插件的 `policy.py` 管理待审批申请，`archive.py` 保存私聊归档，`sleep_inbox.py` 保存睡眠期间待处理消息，`social.py` 提供有限公开关系信息。
+- 好友插件的 `policy.py` 管理待审批申请，`identity.py` 在审批前查询QQ身份，`archive.py` 保存私聊归档，`sleep_inbox.py` 保存睡眠期间待处理消息，`social.py` 提供有限公开关系信息。
 - 手机插件的 `rhythm.py` 维护作息状态，`autonomy.py` 调度自主活动，`phone.py` 封装受限 ADB 操作。
 - `books.py` 管理公开/私密日记，`publisher.py` 管理发布过程，`qzone_client.py` 与 `discussions.py` 处理空间相关能力。
 - `media.py / public_images.py / outbound.py` 处理图片、公开图片来源和输出；权限与配额仍须配置。
@@ -37,6 +37,6 @@ AstrBot 4.29.x
 
 ## 版本范围
 
-本次整理来源于 2026-10-22 的开发目录，替换了实例地址和账号。源码编译检查通过；此前线上功能有各自回归验证。本次未重新搭建空白服务器验证整套冷启动，不把归档包称为一键部署包。
+本次整理来源于 2026-10-23 的开发目录，替换了实例地址和账号。源码编译检查通过；此前线上功能有各自回归验证。本次未重新搭建空白服务器验证整套冷启动，不把归档包称为一键部署包。
 
 管理中心引用的角色插画、图片素材与运行相册未附带。首次复现时可自行提供有权使用的素材，缺失装饰图片不代表聊天或管理逻辑缺失。

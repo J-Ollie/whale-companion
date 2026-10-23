@@ -11,7 +11,7 @@
 
 ## 安装插件
 
-将 `plugins/` 下的五个 `astrbot_plugin_companion_*` 目录放入 AstrBot 的 `data/plugins/`，按 AstrBot 方式加载。不要把所有源码文件平铺在同一个插件目录。
+将 `astrbot-plugins/` 下的五个 `astrbot_plugin_companion_*` 目录放入 AstrBot 的 `data/plugins/`，按 AstrBot 方式加载。不要把所有源码文件平铺在同一个插件目录。
 
 每个目录的 `metadata.yaml` 与 `_conf_schema.json` 给出版本和配置项。示例账号 `100000001` 是管理员，`100000002` 是机器人；必须替换为自己的账号。示例手机地址 `100.64.0.10` 和网站地址 `203.0.113.10` 不是本项目的实际服务地址。
 
@@ -29,7 +29,7 @@
 
 ```text
 /opt/qq-companion/
-  qq-recovery/                 # 本仓库网站源码
+  management-center/                 # 本仓库网站源码
   recovery-data/               # 本机私有认证、来访数据库，不提交
   data/astrbot/plugins/        # 插件源码
   data/astrbot/plugin_data/    # 记忆、日记、消息与状态，不提交
@@ -43,6 +43,20 @@
 
 ## 验证
 
-插件测试在带有 AstrBot 运行依赖的环境执行，例如将 COMPANION_TEST_PLUGINS 指向 `plugins/` 后，在 `tests/` 中运行 unittest。网站测试在 `qq-recovery/` 中执行 `python -m unittest discover`。这些测试使用隔离目录和模拟事件，不应向真实账号发送测试消息。
+推荐在仓库根执行 `python tools/run_tests.py`，它自动设置插件路径并分开运行插件与管理中心测试；必须先具备 AstrBot 运行依赖。
+
+插件测试在带有 AstrBot 运行依赖的环境执行，例如将 COMPANION_TEST_PLUGINS 指向 `astrbot-plugins/` 后，在 `tests/` 中运行 unittest。网站测试在 `management-center/` 中执行 `python -m unittest discover`。这些测试使用隔离目录和模拟事件，不应向真实账号发送测试消息。
 
 实际复现仍应验证：普通好友权限、睡眠未读处理、公开/私密隔离、面板认证、手机配额、实际发布回读。账号风控或手机省电设置可能影响可用性，不能仅凭工具成功回执断言别人一定看得到动态。
+
+## 2026-10-23目录调整与迁移
+
+- 仓库 `plugins/` → `astrbot-plugins/`；里面的五个 Python 包名保持不变。
+- 仓库 `qq-recovery/` → `management-center/`；新 systemd 示例的工作目录和启动路径已同步。
+- 已运行服务器可继续原路径 `/opt/qq-companion/qq-recovery`。本次 GitHub 同步不移动生产目录，也不更改密码或状态。
+- `QQ_RECOVERY_ROOT`、`QQ_RECOVERY_PUBLIC_ORIGIN`、`QQ_RECOVERY_PUBLIC_PROXY_KEY_FILE`、服务名、私有数据目录及 API 路径保持兼容名称。
+- 如果迁移实际部署，先备份，再停止管理服务、复制源码并修改 unit 路径；保留 `recovery-data/` 和 AstrBot 数据。重启管理服务后检查认证与只读接口，不需要为了目录变化重启 QQ。
+
+管理中心新增 `balance.py` 为必需导入文件，应整目录同步，不能只替换 server.py。官方 DeepSeek 余额读取已有 provider 配置，不附带密钥；第三方兼容地址或多账户配置不能当作同一官方账户查询。
+
+好友审批前 UID 查询需要接入端支持固定资料查询；不支持时保留申请但阻止身份未知的审批。不要为兼容而先添加陌生账号再查身份。

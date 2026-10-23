@@ -23,3 +23,8 @@ backups/
 __pycache__/
 *.pyc
 .venv/
+.test-tmp/
+.test-temp/
+deployment.env
+gateway.json
+state.json

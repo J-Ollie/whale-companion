@@ -1,0 +1,412 @@
+[
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_active/_conf_schema.json",
+    "bytes": 856,
+    "sha256": "fc38b9236227a4cebf7221c72598e81b51860ebd419d5a0c1727dd7c9c38bb9b"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_active/chat_style.py",
+    "bytes": 1180,
+    "sha256": "336eab0120bf55fd75ea2ecdbf17f53706440f8fd2b8037baddcbbe64ea634c5"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_active/main.py",
+    "bytes": 15696,
+    "sha256": "3d01742974b44ad3ddbdceefbf51b013f96a3ddc8f61b51734e2ce0b62ab1a8d"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_active/metadata.yaml",
+    "bytes": 281,
+    "sha256": "22779cb9581b6e4d48f32af6b3cbbb04d2d5352cea3d265bf44d1d0a2e708fbd"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_batch/_conf_schema.json",
+    "bytes": 945,
+    "sha256": "c80b5ef49952b9b10d3ea7128f4a9b80500f3ac1b8b1b5bd2e4991a3bce4484c"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_batch/main.py",
+    "bytes": 7295,
+    "sha256": "d193195e73154ab9dae80ad1c225ef3e1b866afbefed9ab3dbf2d2750252744c"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_batch/metadata.yaml",
+    "bytes": 271,
+    "sha256": "5ebf39b819174a91baaba8601a49a8a927d11398878a6df6670914eec4379a4c"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_batch/turn_end.py",
+    "bytes": 3431,
+    "sha256": "3cdba826dbbe8298248ca25ff80d1efec3c0b190cd8ad48977c626ab3d42f992"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/__init__.py",
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/_conf_schema.json",
+    "bytes": 266,
+    "sha256": "2a395cce240531cfacb493803ba2f96a2a8aec4fe3187a71a65b15f01340306e"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/archive.py",
+    "bytes": 8194,
+    "sha256": "584881166775a1bf78c84e5c903139d78b35cd4075f1706000bf767d9a0199ca"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/identity.py",
+    "bytes": 3638,
+    "sha256": "2a69f3c25b56cd625ec5487e7aa71e27ede668473eb522631f5758fa61f91223"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/main.py",
+    "bytes": 15208,
+    "sha256": "939f4ee4660ff33ca8b93f656f09735a6f03f247ca321df7b219fbc476c5930b"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/metadata.yaml",
+    "bytes": 275,
+    "sha256": "5bd468ad2ea94452527ad43ccf2946ac7b81280b86d33a9a24b7ee67f12c5677"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/policy.py",
+    "bytes": 7904,
+    "sha256": "c687f0240fbac4335795865754e98c96121e74a5481efe61cdd63e1432c2e468"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/sleep_inbox.py",
+    "bytes": 1768,
+    "sha256": "6f6ee0028a07d4578eb7e8e749335ec5a565c4f2fe8acde97de816621d913d5f"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_friends/social.py",
+    "bytes": 2187,
+    "sha256": "664eaba8f5b4037bbd651976ce62dfcdd3f1a9152491f23a588d3d5df0f5eb8b"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/_conf_schema.json",
+    "bytes": 636,
+    "sha256": "597f0567002d8bd66733bd0a6cfa078e39692240972d2304c3ae8b9f7b2abb18"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/cognition.py",
+    "bytes": 11787,
+    "sha256": "746bc13bbebb8f849515860d581332990a258ffde14870b6c4efdc2f5a3918f9"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/main.py",
+    "bytes": 26330,
+    "sha256": "9a732f3236903deb71bf4c34ab1d5b0227fc189e2b2f2e5fba91a4d7f3f6bb8d"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/memory.py",
+    "bytes": 18071,
+    "sha256": "4e870a510fbc920fd40968e3ca005a501f38fe39e990246ff4dfbc6b1046bd86"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/metadata.yaml",
+    "bytes": 277,
+    "sha256": "1e198302656cebd915c21e8f6c1d4c32d8401deec0fb1a650435abf483dbd892"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/profile.py",
+    "bytes": 4981,
+    "sha256": "e02c172bfcc90902bf82798e0c8595a955d8f25fbbdb54bc19e89b426900aa12"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/_conf_schema.json",
+    "bytes": 3511,
+    "sha256": "8df59b62252806902d1c14b3364b59b26bb227aeb3616050a2f6299553421a4c"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/access.py",
+    "bytes": 2423,
+    "sha256": "5780ba7bce0ffd433e9a6636dade4c99022ed367addc1301aeeccd2ed1143b13"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/autonomy.py",
+    "bytes": 52183,
+    "sha256": "917cc8dbeaa8aebb6c635a0ccc1bd5343c602dc2cd3882b8a9b71f5ef43fb300"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/books.py",
+    "bytes": 9475,
+    "sha256": "c0ee306cd8fb74bfa3a718c84f35bfa3fb3d112039b3100f63dab41bae7e56fc"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/discussions.py",
+    "bytes": 21576,
+    "sha256": "64f804fa54208ed1b488fc55d144bfd4866b0f3ec117043b2669f29b9cd09d73"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/intents.py",
+    "bytes": 2257,
+    "sha256": "7d9baa1de67154c36da5ba6205d1e3f623270b5a1df4aaddfb40d271f6669f76"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/main.py",
+    "bytes": 70255,
+    "sha256": "c84395bd16f5ad44292ffb8ea32a202e531ba76579b7c66057039f8a742a4617"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/media.py",
+    "bytes": 10699,
+    "sha256": "7dc2ba255a4b9c66049a4c3bea5c10c41e1de8208fb3cf8a09b0cd23010093bc"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/metadata.yaml",
+    "bytes": 219,
+    "sha256": "7b7640d5efeb70bab474126817be1698d466685afe80f3e79b0b01d027e3fea4"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/outbound.py",
+    "bytes": 4014,
+    "sha256": "dc4f8a909263e0584655e4b447cc68c080c457dd7050bc8b08233d1447489e3a"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/phone.py",
+    "bytes": 20424,
+    "sha256": "03ba176d319030ffabffe95af49c5a4860d9c6b862baab2665554271f2bd8893"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/public_images.py",
+    "bytes": 6163,
+    "sha256": "9846b0068201196e5cec277a7c8e5566ada107f2462b86c1c5ade3361d98d29a"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/publisher.py",
+    "bytes": 25303,
+    "sha256": "b1f325ff40d0db97f111734dd4debc49933692ecd6b1d8b095b0cc152acff7d0"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/quiet.py",
+    "bytes": 1370,
+    "sha256": "61729cf473070834cb0ec330c398390d22a8ddd96630041d8ec23dc4e7116d66"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/qzone_client.py",
+    "bytes": 6800,
+    "sha256": "b7944fd1cbe37b5a96a54764cc1c090c32ca9aefed642497127ae097e1f9349c"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/QZONE_SDK_LICENSE",
+    "bytes": 1079,
+    "sha256": "e7de005a2674b9b3606b2ed2e9d43592164fdfe08de6cae91f2674d4033124eb"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/rhythm.py",
+    "bytes": 16189,
+    "sha256": "3d6c8094c57d95317cde5a548c2e2bc585f4ebd660dd178328c931a6f891ffbb"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/site_visitors.py",
+    "bytes": 3387,
+    "sha256": "84853503e959b1a6564a118fccf9afc53da1979e66314da4a65c41b073d97dc0"
+  },
+  {
+    "path": "management-center/archive.py",
+    "bytes": 12186,
+    "sha256": "bf0eb363eef7c103bf8f9a67680193d92a99e3ddf3ae10b5570c08e109c9133a"
+  },
+  {
+    "path": "management-center/balance.py",
+    "bytes": 4822,
+    "sha256": "359b5ec7ae7b36d5760eaabfc3cb7b5d6c227619a29e37272e6f6740f5595dd5"
+  },
+  {
+    "path": "management-center/library.py",
+    "bytes": 10536,
+    "sha256": "09d5e7e0617aa98f052567eebdf955dafe40023cbc179f104af3c852194ed54c"
+  },
+  {
+    "path": "management-center/panel_auth.py",
+    "bytes": 4475,
+    "sha256": "4e3c9565d545e8de76ba4386d212a9ad649c8cbe970ba7e1e843b742fba0e776"
+  },
+  {
+    "path": "management-center/server.py",
+    "bytes": 29148,
+    "sha256": "8bafa910166f6d6a71bab88d8ed5a6d33d156448a9c0535a59414c6013bbf72a"
+  },
+  {
+    "path": "management-center/test_archive.py",
+    "bytes": 6146,
+    "sha256": "23568d4a75cef7116614ef4c422bd98d52070077a56685eb28cd92394720f05c"
+  },
+  {
+    "path": "management-center/test_balance.py",
+    "bytes": 4503,
+    "sha256": "6dcb06338001956d1f02b1e05c7338770d11c4c150259dfdacc8659359d4d9cc"
+  },
+  {
+    "path": "management-center/test_guest.py",
+    "bytes": 8558,
+    "sha256": "2e9e2de86ea80d02cdd91df82c7402866d2a14694640c315242aef815865778b"
+  },
+  {
+    "path": "management-center/test_library.py",
+    "bytes": 6958,
+    "sha256": "00c6af9c8c03033ea739695106dfdb78a26ebc843ede750cf4e739311f5b34c2"
+  },
+  {
+    "path": "management-center/test_memory_query.py",
+    "bytes": 5859,
+    "sha256": "e1b58885822ac605ba7add64ea32171b3873aa61ae0590ebac1d260b1371610f"
+  },
+  {
+    "path": "management-center/test_panel_auth.py",
+    "bytes": 6986,
+    "sha256": "173060d1ce2c0ef14d38180c90753e1c4a2a18791f8144d380ace3a51ba9c5a8"
+  },
+  {
+    "path": "management-center/test_public.py",
+    "bytes": 4064,
+    "sha256": "f96eb9347edf9021da01107fe42892e94d4f5af5f35c7048df8be01a8ed973f2"
+  },
+  {
+    "path": "management-center/test_recovery.py",
+    "bytes": 7603,
+    "sha256": "13d433efbdce634eaad4eaf0111e6a85882caed14a8449e5fde5f0066934c735"
+  },
+  {
+    "path": "management-center/test_visitors.py",
+    "bytes": 7474,
+    "sha256": "46e823127f4ffa002456e3ee6cd08572a0b0315e3643c06e551de846558990e4"
+  },
+  {
+    "path": "management-center/THIRD-PARTY-NOTICES.md",
+    "bytes": 2368,
+    "sha256": "456fdc23b21c952b3c1ac9c7e9754322c0f05f45e6ec0643ed6c4d80a73743e4"
+  },
+  {
+    "path": "management-center/visitors.py",
+    "bytes": 9228,
+    "sha256": "6ccdc3c3eae00f0a432177d3065e6da22a70468f98564b11efb5d8ede2397262"
+  },
+  {
+    "path": "management-center/web/index.html",
+    "bytes": 20547,
+    "sha256": "aedac40785739d4e1e3fa669314c9da8059cc72a9e97e4a8ef44fcbfc25ebfe1"
+  },
+  {
+    "path": "management-center/web/app.js",
+    "bytes": 36983,
+    "sha256": "5b9c5b851b71b5f325d9b6e2e5f2322b27873989c45519320135fa94aa6e68a9"
+  },
+  {
+    "path": "management-center/web/style.css",
+    "bytes": 79867,
+    "sha256": "d5cfb23a4537e106d3e5f373fc874aac43d9a1e7b14ffb2ad9a9c697ef8ab4eb"
+  },
+  {
+    "path": "tests/test_active.py",
+    "bytes": 10788,
+    "sha256": "f7b52028b97d03b61f5a0cca2feb9497694d956f014653067fbf0604a2af3126"
+  },
+  {
+    "path": "tests/test_archive.py",
+    "bytes": 3934,
+    "sha256": "62f555850c434098d8c94107e9a95fa1c8ca36d324d3b2f3335ec3f63c56bb93"
+  },
+  {
+    "path": "tests/test_batch.py",
+    "bytes": 3300,
+    "sha256": "2b892c2cbc91295c2d0f00a182fca34d0e9c798465d098a4e99c702b124eec86"
+  },
+  {
+    "path": "tests/test_chat_style.py",
+    "bytes": 2079,
+    "sha256": "f422e8fdae04224aaf8efb4f52277dd7dcbe56634ed6ea629824b41114c35885"
+  },
+  {
+    "path": "tests/test_cognition.py",
+    "bytes": 10342,
+    "sha256": "106b0c43a571c697a7bb1a7aec6ccf1b2b3a68b8a9653af6559b0dd86f7b50aa"
+  },
+  {
+    "path": "tests/test_daily_diary.py",
+    "bytes": 4040,
+    "sha256": "bc9d625ac8460fa0da695c69ec4e37b702a38474acedb73a09ad1943016a186c"
+  },
+  {
+    "path": "tests/test_discussions.py",
+    "bytes": 12591,
+    "sha256": "c69007b9eac4c3ff0a45b3d17bcaf2691155564440e8244feafca430ec9a412d"
+  },
+  {
+    "path": "tests/test_extended_access.py",
+    "bytes": 11277,
+    "sha256": "4766d62faa7afc11235cb8606547045d522deb3de8cd375115527d195d8323bf"
+  },
+  {
+    "path": "tests/test_friend_identity.py",
+    "bytes": 2752,
+    "sha256": "182af7df9cdb6739d94d47cd92a8d9a58e03dea218b0d5cdf563fbe71a3ec089"
+  },
+  {
+    "path": "tests/test_friends.py",
+    "bytes": 16087,
+    "sha256": "981ed63e5d60e6058c92b0e3a36e446cde308f8b224e9cf6c1294e53223b8e2b"
+  },
+  {
+    "path": "tests/test_memory.py",
+    "bytes": 11409,
+    "sha256": "84f7f4915c229bd253c7d47a0c079880af339b65ec914cd5816b31a47722d05c"
+  },
+  {
+    "path": "tests/test_phone.py",
+    "bytes": 24510,
+    "sha256": "5e1b11445efde27e9df7d348b2f08c5e1fd92af87a79f5d3b421eb4457267047"
+  },
+  {
+    "path": "tests/test_phone_autonomy.py",
+    "bytes": 21317,
+    "sha256": "d6999b60e50774934cd919f841f900c88d69e9dc3563d9725d7e53e37758713f"
+  },
+  {
+    "path": "tests/test_qq_comments.py",
+    "bytes": 10144,
+    "sha256": "2936f8164a9f3f5d9f4f86d4873ca00454b09aff586ed9275fd50f4bd80b12b8"
+  },
+  {
+    "path": "tests/test_qq_space_entry.py",
+    "bytes": 6300,
+    "sha256": "ceacb0e01892821772b225976d9459f037197508c32c2ade6d83a2474d2eac62"
+  },
+  {
+    "path": "tests/test_qzone.py",
+    "bytes": 23677,
+    "sha256": "f0d0b2346ae2faf3573bf2fb90c365b13434d1bc61865a7f47f497ba5979f326"
+  },
+  {
+    "path": "tests/test_rhythm.py",
+    "bytes": 16603,
+    "sha256": "e2d9fc86898370b72e85d423e086d3585cb13fb97c3f0aa58341f3319e9dbccb"
+  },
+  {
+    "path": "tests/test_shared_profile.py",
+    "bytes": 6048,
+    "sha256": "9199e879f3964a9ea4b6582009601f3faa15867b5d0b4d166c66d45f4f7f43f7"
+  },
+  {
+    "path": "tests/test_site_visitors.py",
+    "bytes": 3585,
+    "sha256": "4285004e89c627893848bec3ebf59fcffa546e68a3362f8d1c1f5e2dbdc40d6f"
+  },
+  {
+    "path": "tests/test_sleep_inbox.py",
+    "bytes": 6498,
+    "sha256": "336717b0ef2fd508a89cca1b9f4ffd307a707f0e060748980ed25e30defe4d74"
+  },
+  {
+    "path": "tests/test_social_memory.py",
+    "bytes": 6813,
+    "sha256": "c7387e8b06db3c633bcad163df0fddedff41ef983e8164039ff894b4c2ddcda0"
+  },
+  {
+    "path": "tests/test_turn_end.py",
+    "bytes": 8415,
+    "sha256": "6a3084323ef546276e4636b597d9e4c29b643f093da0197c68779e1a5cd180cd"
+  }
+]

@@ -1,0 +1,22 @@
+[Unit]
+Description=Whale companion management center
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/qq-companion/management-center
+ExecStart=/usr/bin/python3 /opt/qq-companion/management-center/server.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/qq-companion/recovery-data
+ProtectHome=true
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
