@@ -428,3 +428,28 @@ body[data-access=guest] #details .metricInfo{width:100%}
 @media(min-width:821px) and (max-height:850px){.sidebar nav{gap:4px}.sidebar nav button{min-height:52px;padding:9px 12px}.sidebarHeading p{margin-bottom:18px}}
 @media(min-width:821px) and (max-height:700px){#protectedPanel>.sidebarFoot{display:none}}
 @media(max-width:820px){#protectedPanel>.sidebarFoot{display:none}#visitorsPanel .pageHeading h2{font-size:22px}.visitorCard{padding:16px}}
+
+/* Administrator-only balance widget; the server enforces access separately. */
+body.hasBalance .headerNote{display:none}
+.balanceWidget{position:relative;z-index:30;flex-shrink:0;color:#566698}
+.balanceWidget summary{list-style:none;display:flex;align-items:center;gap:11px;min-height:44px;padding:10px 16px;border:1px solid #dce1fc;border-radius:16px;background:#ffffffb8;cursor:pointer;font-size:12px;box-shadow:0 4px 18px #6676c208}
+.balanceWidget summary::-webkit-details-marker{display:none}
+.balanceWidget summary:focus-visible{outline:2px solid #747be9;outline-offset:3px}
+.balanceWidget summary strong{font-size:17px;font-variant-numeric:tabular-nums;color:#4e56a5}
+.balanceDot{width:7px;height:7px;border-radius:50%;background:#8999d7;box-shadow:0 0 0 4px #8999d712}
+.balanceWidget[data-state=empty] .balanceDot,.balanceWidget[data-state=error] .balanceDot{background:#b58aa7;box-shadow:0 0 0 4px #b58aa712}
+.balanceChevron{color:#9aa6c6;font-size:17px}
+.balancePopover{position:absolute;top:calc(100% + 12px);right:0;width:330px;max-width:calc(100vw - 32px);padding:22px;border:1px solid #dde3fc;border-radius:22px;background:linear-gradient(140deg,#fff,#f5f5ff);box-shadow:0 16px 50px #3c4d8e24}
+.balanceHeading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.balanceHeading .eyebrow{font-size:8px;letter-spacing:1.6px}
+.balanceHeading h2{margin:7px 0;font-size:20px;color:#34446f}
+.balanceHeading img{object-fit:contain}
+.balanceState{font-size:11px;margin:8px 0 17px;line-height:1.8;color:#7e89aa}
+.balanceCurrency+.balanceCurrency{border-top:1px solid #e3e7fa;margin-top:15px;padding-top:15px}
+.balanceCurrencyName{font-size:10px;color:#8894b1;display:block}
+.balanceTotal{display:block;font-size:32px;line-height:1.6;font-variant-numeric:tabular-nums;font-weight:650;color:#555db1;overflow-wrap:anywhere}
+.balanceSplit{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;font-size:11px;color:#7885a7}
+.balanceBottom{display:flex;align-items:center;gap:8px;justify-content:space-between;border-top:1px solid #e3e7fa;margin-top:20px;padding-top:14px}
+.balanceBottom>span{font-size:9px;color:#8b97b2}
+.balanceBottom button{margin:0;padding:8px 12px;min-height:36px;font-size:11px;white-space:nowrap}
+@media(max-width:600px){.balanceWidget summary{gap:7px;padding:8px 10px;min-height:38px;border-radius:12px}.balanceBrand{font-size:0}.balanceBrand:after{content:'余额';font-size:10px}.balanceWidget summary strong{font-size:12px}.balanceDot,.balanceChevron{display:none}.balancePopover{width:290px;padding:18px;right:0}.balanceHeading h2{font-size:18px}.balanceTotal{font-size:28px}}

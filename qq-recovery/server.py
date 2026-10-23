@@ -16,6 +16,7 @@ from library import Library
 from panel_auth import PanelAuth
 from archive import Archive
 from visitors import Visitors
+from balance import DeepSeekBalance
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -339,6 +340,7 @@ def make_handler(monitor, token, public_origin='', public_token=''):
     archive=Archive(ROOT)
     auth=PanelAuth(ROOT/'recovery-data')
     visitors=Visitors(ROOT)
+    balance=DeepSeekBalance(ROOT)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass  # No access log containing fragments, QR data or authentication.
@@ -419,6 +421,9 @@ def make_handler(monitor, token, public_origin='', public_token=''):
                 query=parse_qs(route.query)
                 if role=='guest' and not (route.path in ('/api/status','/api/archive') or (route.path=='/api/diaries' and query.get('book',['public'])[0]=='public')):
                     self.reply(403,{'error':'访客无权访问此内容','code':'guest_forbidden'})
+                    return
+                if route.path=='/api/balance':
+                    self.reply(200,balance.query())
                     return
                 if route.path=='/api/archive':
                     self.reply(200,archive.snapshot(guest=role=='guest',day=query.get('day',[''])[0]))

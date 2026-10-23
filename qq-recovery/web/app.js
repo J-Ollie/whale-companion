@@ -12,7 +12,7 @@ function showLogin(first){
   $('panelPassword').setAttribute('autocomplete',first?'new-password':'off');
   $('authSubmit').textContent=first?'设置密码并进入':'登录';
   $('panelPassword').value='';$('confirmPassword').value='';
-  resetVisitorView();resetMemoryView();++archiveRequest;$('archiveAdmin').hidden=true;$('archiveEntries').replaceChildren();archiveData=null;++chatRequest;++diaryRequest;diaryRows=[];clearMedia();$('chatMessages').replaceChildren();$('diaryEntries').replaceChildren();
+  resetBalance();resetVisitorView();resetMemoryView();++archiveRequest;$('archiveAdmin').hidden=true;$('archiveEntries').replaceChildren();archiveData=null;++chatRequest;++diaryRequest;diaryRows=[];clearMedia();$('chatMessages').replaceChildren();$('diaryEntries').replaceChildren();
   $('refreshChats').disabled=false;$('loadDiary').disabled=false;
   $('olderChats').hidden=true;$('olderDiary').hidden=true;
 }
@@ -284,7 +284,7 @@ $('authForm').onsubmit=async event=>{
     panelSession=d.session;unlocked=true;applyAccessRole(d.role||'admin');
     $('panelPassword').value='';$('confirmPassword').value='';
     $('authPanel').hidden=true;$('protectedPanel').hidden=false;$('error').textContent='';
-    await showPanel('Connection');await status();
+    startBalance();await showPanel('Connection');await status();
   }catch(e){$('authError').textContent=e.message;$('panelPassword').setAttribute('aria-invalid','true');$('panelPassword').value='';$('confirmPassword').value=''}
   finally{$('authSubmit').disabled=false;$('authSubmit').removeAttribute('aria-busy');$('authSubmit').textContent=setupRequired?'设置密码并进入':'登录'}
 };
@@ -297,6 +297,46 @@ $('guestLogin').onclick=async()=>{
   }catch(e){$('authError').textContent=e.message}finally{$('guestLogin').disabled=false}
 };
 $('adminLogin').onclick=()=>showLogin(false);
+let balanceTimer=null,balanceRequest=0,balanceLoading=false;
+function resetBalance(){
+  clearInterval(balanceTimer);balanceTimer=null;++balanceRequest;balanceLoading=false;
+  $('balanceWidget').hidden=true;$('balanceWidget').open=false;document.body.classList.remove('hasBalance');
+  $('balanceValue').textContent='—';$('balanceRows').replaceChildren();$('balanceState').textContent='';$('balanceTime').textContent='每分钟更新';$('refreshBalance').disabled=false;
+}
+function startBalance(){
+  resetBalance();if(!unlocked||accessRole!=='admin')return;
+  $('balanceWidget').hidden=false;document.body.classList.add('hasBalance');loadBalance();
+  balanceTimer=setInterval(()=>{if(!document.hidden)loadBalance()},60000);
+}
+function balanceAmount(row,field='total_balance'){
+  return (row.currency==='CNY'?'¥':'$')+Number(row[field]).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:4});
+}
+async function loadBalance(){
+  if(balanceLoading||!unlocked||accessRole!=='admin')return;
+  balanceLoading=true;const request=++balanceRequest;$('refreshBalance').disabled=true;
+  try{
+    const d=await api('balance');if(request!==balanceRequest||!unlocked||accessRole!=='admin')return;
+    const ok=d.status==='ok';$('balanceWidget').dataset.state=ok?(d.is_available?'ok':'empty'):'error';
+    $('balanceRows').replaceChildren();
+    if(ok){
+      $('balanceValue').textContent=d.balance_infos.map(r=>balanceAmount(r)).join(' / ');
+      $('balanceState').textContent=d.is_available?'账户余额可用':'当前账户无可用余额';
+      for(const row of d.balance_infos){
+        const card=line('div','','balanceCurrency');card.append(line('span',row.currency==='CNY'?'人民币 · CNY':'美元 · USD','balanceCurrencyName'),line('strong',balanceAmount(row),'balanceTotal'));
+        const split=line('div','','balanceSplit');split.append(line('span','充值余额 '+balanceAmount(row,'topped_up_balance')),line('span','赠金 '+balanceAmount(row,'granted_balance')));card.append(split);$('balanceRows').append(card);
+      }
+      $('balanceTime').textContent='更新于 '+new Date(d.checked_at*1000).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+' · 每分钟更新';
+    }else{
+      $('balanceValue').textContent='暂不可用';
+      $('balanceState').textContent=({unconfigured:'尚未配置官方 DeepSeek API 密钥。',multiple_accounts:'检测到多个 DeepSeek 密钥，需要先指定查询账户。',invalid_key:'密钥无效或权限不足，请检查服务器配置。',rate_limited:'查询较频繁，请稍后重试。'})[d.code]||'暂时无法查询余额，请稍后重试。';
+      $('balanceTime').textContent='每分钟重试';
+    }
+  }catch(e){if(request===balanceRequest&&unlocked&&accessRole==='admin'){$('balanceValue').textContent='暂不可用';$('balanceState').textContent='余额查询失败，请稍后重试。';$('balanceRows').replaceChildren()}}
+  finally{if(request===balanceRequest){balanceLoading=false;$('refreshBalance').disabled=false}}
+}
+$('refreshBalance').onclick=()=>loadBalance();
+document.addEventListener('click',event=>{if(!$('balanceWidget').contains(event.target))$('balanceWidget').open=false});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('balanceWidget').open){$('balanceWidget').open=false;$('balanceWidget').querySelector('summary').focus()}});
 const navigationTabs=['Connection','Chats','Diary','Archive','Visitors'];
 for(const name of navigationTabs){
   $('tab'+name).addEventListener('keydown',event=>{
