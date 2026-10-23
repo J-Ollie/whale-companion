@@ -48,8 +48,8 @@ class CompanionBatch(Star):
 
         loop = asyncio.get_running_loop()
         now = loop.time()
-        quiet = max(0.01, float(self.config.get('quiet_seconds', 5)))
-        maximum = max(quiet, float(self.config.get('max_seconds', 15)))
+        quiet = max(0.01, float(self.config.get('quiet_seconds', 15)))
+        maximum = max(quiet, float(self.config.get('max_seconds', 60)))
         key = event.unified_msg_origin
         batch = self.pending.get(key)
         # A late arrival belongs to a new batch even if the old waiter has not run yet.

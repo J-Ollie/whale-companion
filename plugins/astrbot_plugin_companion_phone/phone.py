@@ -310,17 +310,25 @@ class Phone:
         except ET.ParseError: return {}
         finally: await self._shell('rm','-f',path)
 
-    async def swipe(self,x1,y1,x2,y2,duration_ms,allowed_packages=None):
+    async def swipe(self,x1,y1,x2,y2,duration_ms,allowed_packages=None,repeat=1):
         async with self.lock:
             self.ready()
+            if type(repeat) is not int or not 1<=repeat<=5:
+                raise PhoneError('连续滑动次数必须为1至5的整数。')
+            if repeat>1 and allowed_packages is None:
+                allowed_packages=frozenset([await self.foreground_app()])
             await self._assert_foreground(allowed_packages)
             start,end=self._point(x1,y1),self._point(x2,y2)
             if isinstance(duration_ms,bool) or not isinstance(duration_ms,(int,float)) or not float(duration_ms).is_integer() or not 100<=duration_ms<=2000:
                 raise PhoneError('滑动时长必须为 100–2000 毫秒的整数。')
-            self._reserve_action()
             self.screen=None
-            await self._shell('input','swipe',*start,*end,int(duration_ms))
-            return '已执行一次滑动；请重新截图确认结果。'
+            for index in range(repeat):
+                if index:await asyncio.sleep(.8)
+                self.ready()
+                await self._assert_foreground(allowed_packages)
+                self._reserve_action()
+                await self._shell('input','swipe',*start,*end,int(duration_ms))
+            return f'已执行{repeat}次连续滑动，中间未截图；接下来观察最终页面，不能声称读过跳过的内容。'
 
     async def key(self,key):
         keys={'HOME':3,'BACK':4,'RECENTS':187,'WAKEUP':224,'ENTER':66}

@@ -346,7 +346,7 @@ class Publisher:
         # This exact address is already explicitly public. A plain-text spelling
         # is not a new destination or a private address disclosure. Do not allow
         # arbitrary hosts, credentials, ports, paths, queries or fragments here.
-        checked=re.sub(r'(?<![A-Za-z0-9_./:@-])82\.157\.147\.222/?(?=$|[\s，。！？、；：）)》】]|[\u4e00-\u9fff])',
+        checked=re.sub(r'(?<![A-Za-z0-9_./:@-])203\.0\.113\.10/?(?=$|[\s，。！？、；：）)》】]|[\u4e00-\u9fff])',
                        '[已授权公开地址]',checked)
         if re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b',checked):
             return '该地址或附带路径、端口不在公开范围。可使用已授权公开地址，或完全不带网址自行重新拟稿；未发布'

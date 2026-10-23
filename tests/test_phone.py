@@ -81,6 +81,31 @@ class PhoneTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PhoneError): await self.phone.key('HOME')
         self.phone._shell.assert_not_called()
 
+    async def test_swipe_batch_needs_only_one_observation_but_invalidates_taps(self):
+        from unittest.mock import patch
+        self.phone.screen=(1080,2376,time.monotonic())
+        self.phone._assert_foreground=AsyncMock()
+        with patch('astrbot_plugin_companion_phone.phone.asyncio.sleep',new_callable=AsyncMock),patch.object(self.phone,'_reserve_action') as reserve:
+            message=await self.phone.swipe(500,780,500,320,550,allowed_packages={'com.coolapk.market'},repeat=5)
+        self.assertEqual(self.phone._shell.await_count,5)
+        self.assertEqual(reserve.call_count,5)
+        self.assertIn('5',message)
+        self.assertIsNone(self.phone.screen)
+        with self.assertRaises(PhoneError):await self.phone.tap(500,500)
+
+    async def test_swipe_batch_stops_on_pause_or_foreground_change(self):
+        from unittest.mock import patch
+        self.phone.screen=(1080,2376,time.monotonic())
+        self.phone._assert_foreground=AsyncMock(side_effect=[None,None,PhoneError('left app')])
+        with patch('astrbot_plugin_companion_phone.phone.asyncio.sleep',new_callable=AsyncMock),patch.object(self.phone,'_reserve_action'):
+            with self.assertRaises(PhoneError):await self.phone.swipe(500,780,500,320,550,allowed_packages={'com.coolapk.market'},repeat=5)
+        self.assertEqual(self.phone._shell.await_count,1)
+
+    async def test_swipe_batch_rejects_invalid_repetition_before_adb(self):
+        for repeat in (True,0,6,1.5,'3'):
+            with self.assertRaises(PhoneError):await self.phone.swipe(500,780,500,320,550,repeat=repeat)
+        self.phone._shell.assert_not_called()
+
     async def test_chinese_is_base64_not_shell_and_restores_ime(self):
         import base64
         self.phone.screen=(1080,2376,time.monotonic())

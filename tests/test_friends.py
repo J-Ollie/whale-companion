@@ -23,13 +23,13 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
         self.call=AsyncMock(return_value=[{'user_id':int(OWNER)},{'user_id':int(FRIEND)}])
         self.notify=AsyncMock(return_value=True)
         self.policy=FriendPolicy(self.root,OWNER,self.call,self.notify)
-        self.raw={'user_id':int(FRIEND),'flag':'opaque-request-flag','comment':'���'}
+        self.raw={'user_id':int(FRIEND),'flag':'opaque-request-flag','comment':'你好'}
 
     async def test_new_request_notifies_owner_without_accepting(self):
         await self.policy.receive(self.raw)
         self.call.assert_not_called()
         self.notify.assert_awaited_once()
-        self.assertIn('/ͬ����� ',self.notify.await_args.args[0])
+        self.assertIn('/同意好友 ',self.notify.await_args.args[0])
         self.assertNotIn('opaque-request-flag',self.notify.await_args.args[0])
         self.assertEqual(self.policy.rows[0]['status'],'pending')
 
@@ -42,9 +42,9 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(row['identity_unresolved'])
         self.assertEqual(row['status'],'pending')
         self.assertTrue(row['notified'])
-        self.assertIn('�˺Ŵ�����',self.notify.await_args.args[0])
+        self.assertIn('账号待解析',self.notify.await_args.args[0])
         self.assertNotIn(raw['flag'],self.notify.await_args.args[0])
-        self.assertNotIn('/ͬ����� ',self.notify.await_args.args[0])
+        self.assertNotIn('/同意好友 ',self.notify.await_args.args[0])
         self.assertFalse(any(c.args[0]=='set_friend_add_request' for c in self.call.await_args_list))
 
     async def test_unresolved_requests_do_not_merge_different_handles(self):
@@ -54,13 +54,13 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.notify.await_count,2)
         restored=FriendPolicy(self.root,OWNER,self.call,self.notify)
         self.assertEqual(len(restored.rows),2)
-        self.assertIn('�˺Ŵ�����',await restored.command(OWNER,'/��������'))
+        self.assertIn('账号待解析',await restored.command(OWNER,'/好友申请'))
 
     async def test_unresolved_approval_requires_owner_and_uses_exact_handle(self):
         with patch('astrbot_plugin_companion_friends.policy.resolve_uid',new_callable=AsyncMock,
-                   return_value={'qq':FRIEND,'nickname':'���������ǳ�','source':'qq_uid_profile'}):
+                   return_value={'qq':FRIEND,'nickname':'测试资料昵称','source':'qq_uid_profile'}):
             await self.policy.receive({**self.raw,'user_id':0,'flag':'u_exact_handle'})
-        command='/ͬ����� '+self.policy.rows[0]['id']
+        command='/同意好友 '+self.policy.rows[0]['id']
         self.assertIsNone(await self.policy.command(FRIEND,command))
         self.call.assert_not_called()
         await self.policy.command(OWNER,command)
@@ -71,7 +71,7 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
         with patch('astrbot_plugin_companion_friends.policy.resolve_uid',new_callable=AsyncMock,side_effect=ValueError('profile_lookup_rejected')) as resolver:
             await self.policy.receive({**self.raw,'user_id':0,'flag':'u_unknown_request'})
             row=self.policy.rows[0]
-            self.assertIn('�ݲ���ͬ��',await self.policy.command(OWNER,'/ͬ����� '+row['id']))
+            self.assertIn('暂不能同意',await self.policy.command(OWNER,'/同意好友 '+row['id']))
             self.assertFalse(any(c.args[0]=='set_friend_add_request' for c in self.call.await_args_list))
             await self.policy.retry_notifications()
             self.assertEqual(resolver.await_count,1)
@@ -83,23 +83,23 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_successful_retry_updates_notification_without_adding_friend(self):
         with patch('astrbot_plugin_companion_friends.policy.resolve_uid',new_callable=AsyncMock,
-                   side_effect=[ValueError('profile_lookup_rejected'),{'qq':FRIEND,'nickname':'QQ�ǳ�','source':'qq_uid_profile'}]):
+                   side_effect=[ValueError('profile_lookup_rejected'),{'qq':FRIEND,'nickname':'QQ昵称','source':'qq_uid_profile'}]):
             await self.policy.receive({**self.raw,'user_id':0,'flag':'u_retry_request'})
             self.policy.rows[0]['identity_last_attempt']=0
             await self.policy.retry_notifications()
         self.assertEqual(self.notify.await_count,2)
         self.assertIn(FRIEND,self.notify.await_args.args[0])
-        self.assertIn('/ͬ����� ',self.notify.await_args.args[0])
+        self.assertIn('/同意好友 ',self.notify.await_args.args[0])
         self.assertEqual(self.policy.rows[0]['status'],'pending')
         self.call.assert_not_called()
 
     async def test_manual_identity_lookup_requires_owner_and_separate_approval(self):
         with patch('astrbot_plugin_companion_friends.policy.resolve_uid',new_callable=AsyncMock,
-                   side_effect=[ValueError('profile_lookup_rejected'),{'qq':FRIEND,'nickname':'QQ�ǳ�','source':'qq_uid_profile'}]) as resolver:
+                   side_effect=[ValueError('profile_lookup_rejected'),{'qq':FRIEND,'nickname':'QQ昵称','source':'qq_uid_profile'}]) as resolver:
             await self.policy.receive({**self.raw,'user_id':0,'flag':'u_manual_request'})
-            row=self.policy.rows[0];command='/�˶Ժ��� '+row['id']
+            row=self.policy.rows[0];command='/核对好友 '+row['id']
             self.assertIsNone(await self.policy.command(FRIEND,command))
-            self.assertIn('60��',await self.policy.command(OWNER,command))
+            self.assertIn('60秒',await self.policy.command(OWNER,command))
             self.assertEqual(resolver.await_count,1)
             row['identity_last_attempt']=0;row['identity_attempts']=3
             self.assertIn(FRIEND,await self.policy.command(OWNER,command))
@@ -133,25 +133,25 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_owner_cannot_approve(self):
         await self.policy.receive(self.raw)
-        result=await self.policy.command(FRIEND,'/ͬ����� '+self.policy.rows[0]['id'])
+        result=await self.policy.command(FRIEND,'/同意好友 '+self.policy.rows[0]['id'])
         self.assertIsNone(result);self.call.assert_not_called()
 
     async def test_owner_approval_and_replay_no_second_accept(self):
         await self.policy.receive(self.raw);identifier=self.policy.rows[0]['id']
-        await self.policy.command(OWNER,'/ͬ����� '+identifier)
+        await self.policy.command(OWNER,'/同意好友 '+identifier)
         self.call.assert_any_await('set_friend_add_request',flag=self.raw['flag'],approve=True)
         count=self.call.await_count
-        await self.policy.command(OWNER,'/ͬ����� '+identifier)
+        await self.policy.command(OWNER,'/同意好友 '+identifier)
         self.assertEqual(self.call.await_count,count)
 
     async def test_owner_rejection_is_explicit_false(self):
         await self.policy.receive(self.raw)
-        await self.policy.command(OWNER,'/�ܾ����� '+self.policy.rows[0]['id'])
+        await self.policy.command(OWNER,'/拒绝好友 '+self.policy.rows[0]['id'])
         self.call.assert_awaited_once_with('set_friend_add_request',flag=self.raw['flag'],approve=False)
 
     async def test_expired_request_not_submitted(self):
         await self.policy.receive(self.raw);self.policy.rows[0]['at']=0
-        self.assertIn('24Сʱ',await self.policy.command(OWNER,'/ͬ����� '+self.policy.rows[0]['id']))
+        self.assertIn('24小时',await self.policy.command(OWNER,'/同意好友 '+self.policy.rows[0]['id']))
         self.call.assert_not_called()
 
     async def test_restart_preserves_pending_without_accepting(self):
@@ -161,7 +161,7 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_uncertain_result_does_not_retry(self):
         await self.policy.receive(self.raw);self.call.side_effect=TimeoutError()
-        command='/ͬ����� '+self.policy.rows[0]['id']
+        command='/同意好友 '+self.policy.rows[0]['id']
         await self.policy.command(OWNER,command)
         self.assertEqual(self.policy.rows[0]['status'],'uncertain')
         await self.policy.command(OWNER,command)
@@ -180,7 +180,7 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
         active=SimpleNamespace(state={'daily_count':4,'paused':True,'unanswered':1})
         lookup=Mock(return_value=SimpleNamespace(star_cls=active))
         p.context=SimpleNamespace(send_message=AsyncMock(return_value=True),get_registered_star=lookup)
-        result=await CompanionFriends.notify(p,'�յ���������')
+        result=await CompanionFriends.notify(p,'收到好友申请')
         self.assertTrue(result)
         p.context.send_message.assert_awaited_once()
         self.assertEqual(p.context.send_message.await_args.args[0],p.umo)
@@ -205,7 +205,7 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
         p.policy=self.policy;p.notify=self.notify
         return p
 
-    def message(self,sender=FRIEND,text='���',**raw):
+    def message(self,sender=FRIEND,text='你好',**raw):
         return SimpleNamespace(raw_message={'self_id':int(BOT),'post_type':'message','message_type':'private','user_id':int(sender),**raw},message_str=text)
 
     async def test_nonfriend_blocked_before_queue(self):
@@ -233,7 +233,7 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_friend_management_commands_blocked(self):
         adapter=SimpleNamespace(commit_event=Mock())
-        self.assertTrue(await self.plugin().intercept(adapter,self.message(text='/�ֻ���ͼ')))
+        self.assertTrue(await self.plugin().intercept(adapter,self.message(text='/手机截图')))
         adapter.commit_event.assert_not_called()
 
     async def test_verified_friend_whitelist_exception_and_restore(self):
@@ -260,11 +260,11 @@ class FriendTests(unittest.IsolatedAsyncioTestCase):
     async def test_friend_persona_and_empty_tools(self):
         from astrbot.api.provider import ProviderRequest
         p=self.plugin()
-        p.context=SimpleNamespace(persona_manager=SimpleNamespace(get_persona=AsyncMock(return_value=SimpleNamespace(system_prompt='����С����'))))
+        p.context=SimpleNamespace(persona_manager=SimpleNamespace(get_persona=AsyncMock(return_value=SimpleNamespace(system_prompt='你是小鲸鱼'))))
         event=SimpleNamespace(get_platform_id=lambda:'qq-companion',get_extra=lambda k,d=None:k==VERIFIED,get_sender_id=lambda:FRIEND)
         req=ProviderRequest(system_prompt='old')
         await p.friend_persona(event,req)
-        self.assertIn('���ǹ���Ա',req.system_prompt)
+        self.assertIn('不是管理员',req.system_prompt)
         self.assertEqual(len(req.func_tool.tools),0)
         await p.isolate_tools(event,req)
         self.assertEqual(len(req.func_tool.tools),0)

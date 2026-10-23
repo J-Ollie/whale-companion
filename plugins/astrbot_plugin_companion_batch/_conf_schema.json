@@ -17,12 +17,12 @@
   "quiet_seconds": {
     "type": "float",
     "description": "最后一条消息后等待秒数",
-    "default": 5.0
+    "default": 15.0
   },
   "max_seconds": {
     "type": "float",
     "description": "一批连续消息最多等待秒数",
-    "default": 15.0
+    "default": 60.0
   },
   "natural_closure": {
     "type": "bool",

@@ -80,12 +80,12 @@ class FriendPolicy:
 
     async def notify_pending(self,row):
         try:
-            commands=('\nͬ�⣺/ͬ����� '+row['id'] if row['qq'] else
-                '\n������δ��ʵ���ݲ���ͬ�⡣�ز飺/�˶Ժ��� '+row['id'])
-            ok=await self.notify('�յ���������\nQQ��'+(row['qq'] or '�˺Ŵ��������밴�����ź˶ԣ�����²��˺�')+'\n��֤��Ϣ���Է���д����'+(row['comment']or'��')
-                +('\n�ǳƣ�QQ���ϣ���'+row['nickname'] if row.get('nickname') and row['qq'] else '')
-                +commands+'\n�ܾ���/�ܾ����� '+row['id']
-                +'\nδ�õ������ȷͬ�⣬�������ӶԷ�')
+            commands=('\n同意：/同意好友 '+row['id'] if row['qq'] else
+                '\n身份尚未核实，暂不能同意。重查：/核对好友 '+row['id'])
+            ok=await self.notify('收到好友申请\nQQ：'+(row['qq'] or '账号待解析，请按申请编号核对；不会猜测账号')+'\n验证信息（对方填写）：'+(row['comment']or'无')
+                +('\n昵称（QQ资料）：'+row['nickname'] if row.get('nickname') and row['qq'] else '')
+                +commands+'\n拒绝：/拒绝好友 '+row['id']
+                +'\n未得到你的明确同意，不会添加对方')
             if ok is not False:
                 row['notified']=True;self.save()
         except Exception:
@@ -103,34 +103,34 @@ class FriendPolicy:
     async def command(self,sender,text):
         if str(sender)!=self.owner:return None
         text=text.strip()
-        if text in ('/��������','��������'):
+        if text in ('/好友申请','好友申请'):
             rows=[r for r in self.rows if r['status']in('pending','uncertain')]
-            return '\n'.join(r['id']+' �� '+('QQ '+r['qq'] if r['qq'] else '�˺Ŵ�����')+' �� '+('������' if r['status']=='pending' else '������˶�') for r in rows) or '��ǰû�д������ĺ�������'
-        lookup=re.fullmatch(r'/?�˶Ժ���\s+([0-9A-F]{6})',text,re.I)
+            return '\n'.join(r['id']+' · '+('QQ '+r['qq'] if r['qq'] else '账号待解析')+' · '+('待审批' if r['status']=='pending' else '结果待核对') for r in rows) or '当前没有待处理的好友申请'
+        lookup=re.fullmatch(r'/?核对好友\s+([0-9A-F]{6})',text,re.I)
         if lookup:
             async with self.lock:
                 row=next((r for r in self.rows if r['id']==lookup[1].upper()),None)
-                if not row or row['status']!='pending':return 'û����������������'
-                if time.time()-row['at']>86400:return '�����ѳ���24Сʱ�����öԷ���������'
+                if not row or row['status']!='pending':return '没有这条待处理申请'
+                if time.time()-row['at']>86400:return '申请已超过24小时，请让对方重新申请'
                 if await self.resolve_identity(row,force=True):
-                    return '�Ѻ�ʵ���� '+row['id']+' ��QQ��'+row['qq']+'\n�˶Ժ�ɷ��� /ͬ����� '+row['id']
-                return '������δ��ʵ���ݲ���ͬ�⣻��ѯ�������60�롣���ڹٷ�QQ�˶ԣ����Ժ��ٷ��� /�˶Ժ��� '+row['id']
-        match=re.fullmatch(r'/?(ͬ�����|�ܾ�����)\s+([0-9A-F]{6})',text,re.I)
+                    return '已核实申请 '+row['id']+' 的QQ：'+row['qq']+'\n核对后可发送 /同意好友 '+row['id']
+                return '身份仍未核实，暂不能同意；查询间隔至少60秒。请在官方QQ核对，或稍后再发送 /核对好友 '+row['id']
+        match=re.fullmatch(r'/?(同意好友|拒绝好友)\s+([0-9A-F]{6})',text,re.I)
         if not match:return None
         async with self.lock:
             row=next((r for r in self.rows if r['id']==match[2].upper()),None)
-            if not row or row['status']!='pending':return 'û���������������룬�뷢�� /�������� �鿴'
-            if time.time()-row['at']>86400:return '�����ѳ���24Сʱ�����öԷ��������룬������������'
-            approve=match[1]=='ͬ�����'
+            if not row or row['status']!='pending':return '没有这条待处理申请，请发送 /好友申请 查看'
+            if time.time()-row['at']>86400:return '申请已超过24小时，请让对方重新申请，不处理旧请求'
+            approve=match[1]=='同意好友'
             if approve and not row.get('qq'):
-                return '������QQ��δ��ʵ���ݲ���ͬ�⡣���ȷ��� /�˶Ժ��� '+row['id']+'��������ʵQQ���˶Ժ��پ���'
+                return '申请人QQ尚未核实，暂不能同意。请先发送 /核对好友 '+row['id']+'，看到真实QQ并核对后再决定'
             row['status']='processing';self.save()
             try:
                 await self.call('set_friend_add_request',flag=row['flag'],approve=approve)
             except Exception:
                 row['status']='uncertain';self.save()
-                return '���������δȷ�ϣ������Զ����ԣ�������QQ�˶Ժ����б�'
+                return '处理结果暂未确认，不会自动重试；请先在QQ核对好友列表'
             row['status']='approved' if approve else 'rejected';row['decided_at']=time.time();self.save()
-            if not approve:return '�Ѿܾ�������������'
-            if await self.is_friend(row['qq']):return '��ͬ�� QQ '+row['qq']+'�����ڿ���˽��'
-            return '���ύͬ�����룻�ȴ�QQ�����б�ͬ����ȷ���Ǻ��Ѻ�ŻῪ��˽��'
+            if not approve:return '已拒绝这条好友申请'
+            if await self.is_friend(row['qq']):return '已同意 QQ '+row['qq']+'，现在可以私聊'
+            return '已提交同意申请；等待QQ好友列表同步，确认是好友后才会开放私聊'

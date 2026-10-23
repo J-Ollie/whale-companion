@@ -44,6 +44,16 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(self.a.due(NOW,True))
                 self.config[key]=True
 
+    async def test_autonomous_batch_scrolls_then_observes_once(self):
+        self.model.side_effect=[
+            '{"use":true,"app":"com.coolapk.market"}',
+            '{"page_type":"content","action":"scroll","direction":"up","scroll_count":5}',
+            '{"page_type":"content","action":"stop"}']
+        with patch('asyncio.sleep',AsyncMock()):await self.a.consider()
+        self.assertEqual(self.phone.screenshot.await_count,2)
+        self.phone.swipe.assert_awaited_once_with(500,780,500,320,550,allowed_packages=frozenset([COOL]),repeat=5)
+        self.assertEqual(self.a.state['last_swipes'],5)
+
     async def test_existing_qq_visit_can_choose_high_level_reply(self):
         self.config.update(autonomous_interactive=True,qq_comment_consent=True)
         context=[{'post':{'post_id':'p1'},'comments':[{'comment_id':'c1','text':'这篇不错'}]}]
