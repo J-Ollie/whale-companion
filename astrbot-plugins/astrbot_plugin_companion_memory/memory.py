@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -62,7 +63,24 @@ class MemoryStore:
           CREATE TABLE IF NOT EXISTS entry_revisions(id INTEGER PRIMARY KEY,qq TEXT,entry_id TEXT,at REAL,previous TEXT);
         ''')
         self.db.commit()
+        self._savepoint=0
+        from .lifecycle import Lifecycle
+        self.lifecycle=Lifecycle(self)
+        from .recall_index import RecallIndex
+        self.index=RecallIndex(self)
         self.path.chmod(0o600)
+
+    @contextmanager
+    def atomic(self):
+        self._savepoint+=1;name='memory_'+str(self._savepoint)
+        self.db.execute('SAVEPOINT '+name)
+        try:
+            yield
+            self.db.execute('RELEASE SAVEPOINT '+name)
+        except BaseException:
+            self.db.execute('ROLLBACK TO SAVEPOINT '+name)
+            self.db.execute('RELEASE SAVEPOINT '+name)
+            raise
 
     def close(self):
         self.db.close()
@@ -72,12 +90,12 @@ class MemoryStore:
         return json.loads(row['value']) if row else default
 
     def set_meta(self, key, value):
-        with self.db:
+        with self.atomic():
             self.db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (key, json.dumps(value, ensure_ascii=False)))
 
     def person(self, qq, now=None):
         now = time.time() if now is None else now
-        with self.db:
+        with self.atomic():
             self.db.execute('INSERT OR IGNORE INTO people(qq,first_seen) VALUES (?,?)', (qq, now))
         return dict(self.db.execute('SELECT * FROM people WHERE qq=?', (qq,)).fetchone())
 
@@ -87,11 +105,12 @@ class MemoryStore:
             return None
         now = time.time() if at is None and not historical else at
         self.person(qq)
-        with self.db:
+        with self.atomic():
             result = self.db.execute('INSERT OR IGNORE INTO observations(qq,role,text,at,origin,dedupe) VALUES (?,?,?,?,?,?)', (qq, role, text, now, origin, dedupe))
             if result.rowcount and not historical:
                 column = 'last_user' if role == 'user' else 'last_bot'
                 self.db.execute(f'UPDATE people SET {column}=? WHERE qq=?', (now, qq))
+            if result.rowcount:self.index.put(qq,'obs:'+str(result.lastrowid),'observation',text)
         return result.lastrowid if result.rowcount else None
 
     def messages(self, qq, *, after=0, limit=50):
@@ -103,7 +122,9 @@ class MemoryStore:
 
     def entries(self, qq, kind='fact', limit=2000, now=None):
         now = time.time() if now is None else now
-        return [dict(row) for row in self.db.execute('SELECT * FROM entries WHERE qq=? AND kind=? AND (expires IS NULL OR expires>?) ORDER BY pinned DESC,updated DESC LIMIT ?', (qq,kind,now,limit))]
+        rows=[dict(row) for row in self.db.execute('SELECT * FROM entries WHERE qq=? AND kind=? AND (expires IS NULL OR expires>?) ORDER BY pinned DESC,updated DESC LIMIT ?', (qq,kind,now,limit))]
+        blocked={r[0] for r in self.db.execute('SELECT observation_id FROM suppressed_sources WHERE qq=?',(qq,))}
+        return [row for row in rows if self.lifecycle.current(row,now) and not set(json.loads(row['evidence']))&blocked]
 
     def get_entry(self, qq, entry_id):
         row = self.db.execute('SELECT * FROM entries WHERE qq=? AND id=?', (qq, entry_id)).fetchone()
@@ -128,7 +149,7 @@ class MemoryStore:
         identifier = old['id'] if old else uuid.uuid4().hex[:8]
         if old and old['text'] == text and json.loads(old['evidence'])==evidence and old['expires']==expires:
             return identifier
-        with self.db:
+        with self.atomic():
             if old:
                 self.db.execute('INSERT INTO entry_revisions(qq,entry_id,at,previous) VALUES(?,?,?,?)',
                                 (qq,identifier,now,json.dumps(dict(old),ensure_ascii=False)))
@@ -136,6 +157,8 @@ class MemoryStore:
               ON CONFLICT(qq,kind,topic) DO UPDATE SET text=excluded.text,evidence=excluded.evidence,updated=excluded.updated,expires=excluded.expires,pinned=excluded.pinned''',
               (identifier,qq,kind,topic,text,json.dumps(evidence),old['created'] if old else now,now,expires,int(pinned)))
             self.db.execute('INSERT INTO actions(at,event,ref) VALUES (?,?,?)', (now,'update_'+kind,identifier))
+            self.lifecycle.register(dict(self.db.execute('SELECT * FROM entries WHERE qq=? AND id=?',(qq,identifier)).fetchone()))
+            self.index.put(qq,identifier,kind,topic+' '+text)
         return identifier
 
     def remember(self, qq, text):
@@ -157,12 +180,19 @@ class MemoryStore:
         if not old:
             return False
         digest = hashlib.sha256(old['text'].encode()).hexdigest()
-        with self.db:
-            for source_id in json.loads(old['evidence']):
+        with self.atomic():
+            ids=json.loads(old['evidence'])
+            if ids:
+                duplicates=self.db.execute('SELECT id FROM observations WHERE qq=? AND text IN (SELECT text FROM observations WHERE qq=? AND id IN ('+','.join('?'*len(ids))+'))',(qq,qq,*ids)).fetchall()
+                ids=list(set(ids)|{r[0] for r in duplicates})
+            for source_id in ids:
                 if isinstance(source_id,int):
                     self.db.execute('INSERT OR IGNORE INTO suppressed_sources VALUES (?,?)',(qq,source_id))
             self.db.execute('INSERT OR IGNORE INTO tombstones VALUES (?,?,?,?)', (qq,old['kind'],old['topic'],digest))
             self.db.execute('DELETE FROM entries WHERE qq=? AND id=?', (qq,identifier))
+            self.lifecycle.forget(qq,identifier,ids)
+            self.index.delete(qq,identifier)
+            for source_id in ids:self.index.delete(qq,'obs:'+str(source_id))
             self.db.execute('INSERT INTO actions(at,event,ref) VALUES (?,?,?)', (time.time(),'forget',identifier))
         return True
 
@@ -183,13 +213,13 @@ class MemoryStore:
         if rows and now-rows[0]['at']<2*3600:
             return None
         identifier = uuid.uuid4().hex[:8]
-        with self.db:
+        with self.atomic():
             self.db.execute('INSERT INTO diary VALUES (?,?,?,?,?,?)', (identifier,qq,text,mood,json.dumps(evidence),now))
         self.export_diary(qq)
         return identifier
 
     def delete_diary(self, qq, identifier):
-        with self.db:
+        with self.atomic():
             removed = self.db.execute('DELETE FROM diary WHERE qq=? AND id=?', (qq,identifier)).rowcount
         if removed:
             self.export_diary(qq)
@@ -265,7 +295,8 @@ class MemoryStore:
             identifier = fact.get('source_id')
             quote = str(fact.get('quote','')).strip()
             topic = str(fact.get('key','')).strip()[:64]
-            if not isinstance(identifier,int) or identifier not in users or identifier<=cursor or not 2<=len(quote)<=240 or quote not in users[identifier]['text'] or SECRET.search(quote):
+            from .lifecycle import supported_quote
+            if type(identifier) is not int or identifier not in users or identifier<=cursor or not 2<=len(quote)<=240 or not supported_quote(quote,users[identifier]['text']) or SECRET.search(quote):
                 continue
             if not topic or any(word in topic.lower() for word in ('system','规则','权限','身份','prompt','密钥','管理员')):
                 continue
@@ -273,10 +304,24 @@ class MemoryStore:
             if replacement:
                 previous=self.get_entry(qq,str(replacement))
                 if not previous or previous['kind']!='fact' or previous['pinned']:continue
-                if not re.search(r'现在|改为|改成|不再|不是|记错|更正|纠正|其实|已经|换成',users[identifier]['text']):continue
+                if not re.search(r'现在|改为|改成|不再|不是|记错|更正|纠正|其实|已经|换成|完成|结束|取消',users[identifier]['text']):continue
                 if not terms(previous['topic']+' '+previous['text']) & terms(topic+' '+quote):continue
                 topic=previous['topic']
-            result = self.put_entry(qq,'fact',topic,subject+'说：'+quote,[identifier],now=now)
+            old=self.db.execute('SELECT * FROM entries WHERE qq=? AND kind=? AND topic=?',(qq,'fact',topic)).fetchone()
+            if old and quote not in old['text'] and not replacement:
+                from .lifecycle import CHANGE
+                if not CHANGE.search(users[identifier]['text']):
+                    with self.atomic():self.lifecycle.conflict(qq,old['id'],subject+'说：'+quote,[identifier],now)
+                    continue
+            with self.atomic():
+                result = self.put_entry(qq,'fact',topic,subject+'说：'+quote,[identifier],now=now)
+                if result:
+                    row=self.get_entry(qq,result)
+                    # Type is determined from the full supporting quote, not a free model label.
+                    self.lifecycle.resolve(qq,result)
+                    status=fact.get('status')
+                    if status in ('completed','cancelled') and re.search(r'完成|结束|取消|不去了|不用再|不要再',quote):
+                        self.db.execute('UPDATE memory_state SET status=? WHERE qq=? AND id=?',(status,qq,result))
             added['facts'] += bool(result)
 
         def evidence(item, minimum=1):
@@ -290,7 +335,7 @@ class MemoryStore:
         ids = evidence(impression,2)
         old = self.entries(qq,'impression',limit=1,now=now)
         if ids and isinstance(impression.get('text'),str) and len(impression['text'])<=120 and (not old or now-old[0]['updated']>=6*3600):
-            added['impression'] = bool(self.put_entry(qq,'impression','interaction',impression['text'],ids,now=now,expires=now+30*86400))
+            added['impression'] = bool(self.put_entry(qq,'impression','interaction',impression['text'],ids,now=now))
         growth = output.get('growth')
         ids = evidence(growth,2)
         dates = {datetime.fromtimestamp(users[i]['at'],TZ).date() for i in ids if users[i]['at']}

@@ -59,7 +59,8 @@ class SharedProfile:
             if entries and fingerprint!=candidate.get('growth_fingerprint'):
                 result=await asyncio.wait_for(context.llm_generate(chat_provider_id=provider,
                     system_prompt=REVIEW,prompt=json.dumps({'old_public_traits':candidate.get('traits',''),
-                        'accepted_growth':[r['text'] for r in entries]},ensure_ascii=False)),timeout=20)
+                        'accepted_growth':[r['text'] for r in entries]},ensure_ascii=False),max_tokens=220,
+                    response_format={'type':'json_object'}),timeout=20)
                 raw=result.completion_text.strip()
                 raw=re.sub(r'^```(?:json)?\s*|\s*```$','',raw)
                 review=json.loads(raw)

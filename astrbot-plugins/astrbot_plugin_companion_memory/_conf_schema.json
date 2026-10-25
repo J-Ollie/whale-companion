@@ -1,6 +1,6 @@
 {
   "enabled": {"type":"bool","description":"启用记忆与时间上下文","default":true},
-  "auto_extract": {"type":"bool","description":"回复后自动整理有依据的事实、印象与可选日记","default":true},
+  "auto_extract": {"type":"bool","description":"清醒时按预算增量整理事实、计划、话题与印象；日记独立处理","default":true},
   "growth_enabled": {"type":"bool","description":"允许基于跨多日互动缓慢形成表达偏好","default":true},
   "owner_qq": {"type":"string","description":"记忆所属主QQ","default":"100000001"},
   "platform_id": {"type":"string","description":"平台ID","default":"qq-companion"},

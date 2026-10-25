@@ -1,7 +1,7 @@
 name: astrbot_plugin_companion_memory
 display_name: 小鲸鱼记忆与日记
 desc: 按QQ保存有原话依据的记忆、可修正印象、自选日记、实际时间与缓慢成长。
-version: v1.2.0
+version: v1.3.0
 author: local
 support_platforms:
   - aiocqhttp
