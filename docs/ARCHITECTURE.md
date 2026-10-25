@@ -21,13 +21,14 @@ AstrBot 4.29.x
 
 源码位于 `astrbot-plugins/`，管理中心位于 `management-center/`，插件测试位于 `tests/`。
 
-- 记忆插件的 `memory.py / cognition.py / profile.py` 管理持久化记录、检索与共享身份；`main.py` 接入 AstrBot 事件。
+- 记忆插件的 `memory.py / cognition.py / profile.py` 管理持久化、检索与共享身份；`lifecycle.py / recall_index.py / reflection.py / budget.py` 管理时间、索引、增量和预算，`main.py` 接入事件。
 - 好友插件的 `policy.py` 管理待审批申请，`identity.py` 在审批前查询QQ身份，`archive.py` 保存私聊归档，`sleep_inbox.py` 保存睡眠期间待处理消息，`social.py` 提供有限公开关系信息。
 - 手机插件的 `rhythm.py` 维护作息状态，`autonomy.py` 调度自主活动，`phone.py` 封装受限 ADB 操作。
 - `books.py` 管理公开/私密日记，`publisher.py` 管理发布过程，`qzone_client.py` 与 `discussions.py` 处理空间相关能力。
 - `media.py / public_images.py / outbound.py` 处理图片、公开图片来源和输出；权限与配额仍须配置。
 - 网站的 `panel_auth.py` 管理密码和会话，`library.py / archive.py` 查询日记和档案，`visitors.py` 保存来访与私密留言。
 - `site_visitors.py` 只读取网站导出的有限摘要，不读取管理密码或完整数据库。
+- 网站另有 `presence.py` 的公开表达、`billing.py / platform_billing.py` 的受权费用同步，以及 `phone_health.py` 与插件socket协作的窄范围连接维护。
 
 ## 数据边界
 
@@ -37,6 +38,6 @@ AstrBot 4.29.x
 
 ## 版本范围
 
-本次整理来源于 2026-10-23 的开发目录，替换了实例地址和账号。源码编译检查通过；此前线上功能有各自回归验证。本次未重新搭建空白服务器验证整套冷启动，不把归档包称为一键部署包。
+本次整理来源于截至 2026-10-25 的开发目录，替换了实例地址和账号。源码语法与清单核对通过；此前线上功能有分阶段回归记录，本次未重跑整套测试或搭建空白服务器，不把归档包称为一键部署包。
 
 管理中心引用的角色插画、图片素材与运行相册未附带。首次复现时可自行提供有权使用的素材，缺失装饰图片不代表聊天或管理逻辑缺失。

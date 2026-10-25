@@ -57,6 +57,12 @@
 - `QQ_RECOVERY_ROOT`、`QQ_RECOVERY_PUBLIC_ORIGIN`、`QQ_RECOVERY_PUBLIC_PROXY_KEY_FILE`、服务名、私有数据目录及 API 路径保持兼容名称。
 - 如果迁移实际部署，先备份，再停止管理服务、复制源码并修改 unit 路径；保留 `recovery-data/` 和 AstrBot 数据。重启管理服务后检查认证与只读接口，不需要为了目录变化重启 QQ。
 
-管理中心新增 `balance.py` 为必需导入文件，应整目录同步，不能只替换 server.py。官方 DeepSeek 余额读取已有 provider 配置，不附带密钥；第三方兼容地址或多账户配置不能当作同一官方账户查询。
+管理中心的 `balance.py`、`billing.py`、`platform_billing.py`、`phone_health.py`、`presence.py` 均为现有必需导入，应同步依赖，不能只替换server.py。官方DeepSeek余额读取provider配置，不附带密钥；第三方兼容地址或多账户配置不能当作同一官方账户查询。
+
+费用自动同步需管理员显式提供官网登录令牌并确认所选Key，令牌不是API Key。相关认证和账单留在私有 `recovery-data/`。提前创建 `data/astrbot/plugin_data/companion_rations`，启用 `systemd/rations.conf` 以允许有限摘要写入；已有visitors目录授权同样保留。
+
+手机连接管理还依赖插件的 `connection_control.py` 和本地socket。连接检查只维护已有配对，不执行应用操作；新实例须同时替换 `phone_health.py`、手机插件中的示例地址和设备校验。
+
+公网 `/manage/` 后台跳转依赖额外的可信Nginx代理，结合管理中心 `/api/backend-auth` 与管理员会话，仍保留各后台登录。仓库不包含生产Nginx配置、代理key或TLS资料，不要把裸后台直接暴露公网作为替代。
 
 好友审批前 UID 查询需要接入端支持固定资料查询；不支持时保留申请但阻止身份未知的审批。不要为兼容而先添加陌生账号再查身份。

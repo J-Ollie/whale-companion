@@ -52,10 +52,13 @@ def main():
         target = destination / relative
         normalized = content.replace('\r\n', '\n')
         existing = target.read_bytes() if target.exists() else b''
-        # Preserve the established file's line endings for a focused public diff.
-        if b'\r\n' in existing:
-            normalized = normalized.replace('\n', '\r\n')
-        payload = normalized.encode('utf-8')
+        # Preserve exact bytes when only newline conventions differ, including mixed files.
+        if existing and existing.decode('utf-8-sig').replace('\r\n', '\n') == normalized:
+            payload = existing
+        else:
+            if b'\r\n' in existing:
+                normalized = normalized.replace('\n', '\r\n')
+            payload = normalized.encode('utf-8')
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
         manifest.append({'path': relative.as_posix(), 'bytes': len(payload),
