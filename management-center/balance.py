@@ -15,6 +15,33 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def ration_voice(result):
+    unknown={'tone':'unknown','label':'饭缸暂时看不清',
+             'text':'我没看清饭缸，不代表已经没米了。等会儿再看看',
+             'notice':'按账户余额切换的页面文案，不是实时聊天，也不估算还能使用多久。'}
+    if result.get('status')!='ok':return unknown
+    rows=result.get('balance_infos',[])
+    try:
+        available=[r for r in rows if Decimal(r['total_balance'])>0]
+        row=next((r for r in available if r['currency']=='CNY'),available[0] if available else None)
+        amount=Decimal(row['total_balance']) if row else Decimal(0)
+    except (InvalidOperation,ValueError,KeyError,TypeError):return unknown
+    if amount>0 and not result.get('is_available'):
+        return {'tone':'unknown','label':'账户当前不可用','text':'账上还有余粮，但饭暂时端不出来。先看看账户状态，不能直接当成没米了','notice':unknown['notice']}
+    if amount<=0:
+        tone,label,text='empty','饭碗空了','碗先抱着，等你方便时再添点米。吃白饭的大肥鱼也有空碗的时候嘛'
+    else:
+        thresholds=[100,30,10,1] if row['currency']=='CNY' else [20,5,2,0.2]
+        level=next((i for i,value in enumerate(thresholds) if amount>=Decimal(str(value))),4)
+        tone,label,text=[
+            ('full','饭缸满满','米缸挺满的嘛，今天可以安心吃白饭了。先说好，我也会认真干活的'),
+            ('steady','余粮够吃','还有饭，尾巴先放松一下。你慢慢说，我边吃边想'),
+            ('careful','慢慢吃米','余粮薄了一点，我慢慢吃。该认真说的话，还是会认真说'),
+            ('low','快见碗底','快看见碗底了，我先把这点米护好。等你方便时再添就行'),
+            ('tiny','还剩一点点','还剩几粒米，我数清楚了。先不乱扑腾，饭碗放这儿等你')][level]
+    return {'tone':tone,'label':label,'text':text,'notice':unknown['notice']}
+
+
 class DeepSeekBalance:
     ENDPOINT = 'https://api.deepseek.com/user/balance'
 
@@ -74,7 +101,7 @@ class DeepSeekBalance:
         with self.lock:
             now = time.time()
             if self.result is not None and now - self.last_attempt < 60:
-                return {**self.result, 'cached': True}
+                return {**self.result, 'cached': True, 'voice':ration_voice(self.result)}
             self.last_attempt = now
             try:
                 key = self._key()
@@ -101,4 +128,4 @@ class DeepSeekBalance:
                 self.snapshot = None
                 self.result = {'status': 'error', 'code': code, 'stale': False,
                                'balance_infos': [], 'checked_at': None}
-            return {**self.result, 'cached': False}
+            return {**self.result, 'cached': False, 'voice':ration_voice(self.result)}

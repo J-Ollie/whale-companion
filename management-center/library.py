@@ -32,22 +32,39 @@ class Library:
         path=self.data/'companion_memory/memory.sqlite3'
         empty={'contacts':[],'qq':qq,'entries':[],'total':0,'offset':before,'page_size':30,
                'has_more':False,'available':False,
-               'notice':'展示已整理保存的记忆，不等同于完整聊天记录。长期记忆指未设置到期时间的条目；相处印象和成长倾向也可按分类查看。'}
+               'notice':'按内容类型、有效时间与依据查看记忆。过期计划保留为历史，不推断已经完成；印象不是事实。新对话会按预算加载相关记忆，不需手动迁移。'}
         if not path.exists():return empty
-        now=time.time();where=['qq=?'];args=[qq]
-        if kind:where.append('kind=?');args.append(kind)
-        if term:where.append('expires IS NULL' if term=='long' else 'expires IS NOT NULL')
-        if state=='active':where.append('(expires IS NULL OR expires>?)');args.append(now)
-        elif state=='expired':where.append('expires IS NOT NULL AND expires<=?');args.append(now)
+        with closing(self.connection(path)) as db:
+            has_state=bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='memory_state'").fetchone())
+        joined='entries e LEFT JOIN memory_state s ON e.qq=s.qq AND e.id=s.id' if has_state else 'entries e'
+        now=time.time();where=['e.qq=?'];args=[qq]
+        if kind:where.append('e.kind=?');args.append(kind)
+        if term:
+            where.append(("COALESCE(s.type,'semantic') NOT IN ('plan','state','working','impression')" if term=='long' else
+                          "COALESCE(s.type,'semantic') IN ('plan','state','working','impression')") if has_state else
+                         ('e.expires IS NULL' if term=='long' else 'e.expires IS NOT NULL'))
+        if state=='active':
+            where.append('(e.expires IS NULL OR e.expires>?)');args.append(now)
+            if has_state:where.append("COALESCE(s.status,'active')='active' AND (s.valid_to IS NULL OR s.valid_to>?)");args.append(now)
+        elif state=='expired':
+            where.append("(e.expires IS NOT NULL AND e.expires<=? OR s.valid_to IS NOT NULL AND s.valid_to<=? OR s.status IN ('cancelled','completed','historical'))" if has_state else 'e.expires IS NOT NULL AND e.expires<=?')
+            args.extend([now,now] if has_state else [now])
         if q:
             literal=q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
-            where.append("(topic LIKE ? ESCAPE '\\' OR text LIKE ? ESCAPE '\\')");args.extend(['%'+literal+'%']*2)
+            where.append("(e.topic LIKE ? ESCAPE '\\' OR e.text LIKE ? ESCAPE '\\')");args.extend(['%'+literal+'%']*2)
         condition=' AND '.join(where)
         with closing(self.connection(path)) as db:
             db.execute('PRAGMA query_only=ON')
             contacts=[{'qq':r['qq'],'count':r['count']} for r in db.execute('SELECT qq,COUNT(*) count FROM entries GROUP BY qq ORDER BY qq LIMIT 500')]
-            total=db.execute('SELECT COUNT(*) FROM entries WHERE '+condition,args).fetchone()[0]
-            rows=[dict(r) for r in db.execute('SELECT id,kind,topic,text,created,updated,expires,pinned,evidence FROM entries WHERE '+condition+' ORDER BY pinned DESC,updated DESC,id LIMIT 30 OFFSET ?',args+[before])]
+            total=db.execute('SELECT COUNT(*) FROM '+joined+' WHERE '+condition,args).fetchone()[0]
+            fields='e.id,e.kind,e.topic,e.text,e.created,e.updated,e.expires,e.pinned,e.evidence'
+            if has_state:fields+=',s.type memory_type,s.status,s.valid_from,s.valid_to,s.review_after,s.source_kind,s.version'
+            rows=[dict(r) for r in db.execute('SELECT '+fields+' FROM '+joined+' WHERE '+condition+' ORDER BY e.pinned DESC,e.updated DESC,e.id LIMIT 30 OFFSET ?',args+[before])]
+            if has_state:
+                for row in rows:
+                    if row.get('valid_to') and row['valid_to']<=now:row['status']='past_due' if row['memory_type']=='plan' else 'historical'
+                    row['review_due']=bool(row.get('review_after') and row['review_after']<=now)
+                    if db.execute('SELECT 1 FROM memory_conflicts WHERE qq=? AND entry_id=? AND resolved=0',(qq,row['id'])).fetchone():row['status']='conflicted'
             audit=[]
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='recall_audit'").fetchone():
                 for item in db.execute('SELECT at,operation,refs FROM recall_audit WHERE qq=? ORDER BY id DESC LIMIT 5',(qq,)):
@@ -61,7 +78,7 @@ class Library:
             try:
                 evidence=json.loads(row.pop('evidence'));row['evidence_count']=len(evidence) if isinstance(evidence,list) else 0
             except (ValueError,TypeError):row.pop('evidence',None);row['evidence_count']=0
-            row['expired']=row['expires'] is not None and row['expires']<=now
+            row['expired']=(row['expires'] is not None and row['expires']<=now) or row.get('status') in ('past_due','historical','cancelled','completed')
         return {**empty,'available':True,'contacts':contacts,'entries':rows,'total':total,'has_more':before+len(rows)<total,'recall_audit':audit}
 
     def memory_evidence(self,qq,identifier):
@@ -137,10 +154,10 @@ class Library:
         normalized.sort(key=lambda r:(r['day'],r.get('at',0)),reverse=True)
         page=normalized[before:before+51]
         return {'book':book,'entries':[{k:v for k,v in r.items() if k in
-                ('id','at','updated_at','day','text','mood','kind')} for r in page[:50]],
+                ('id','at','updated_at','day','text','mood','kind','reason_status','retrospective')} for r in page[:50]],
                 'has_more':len(page)>50,'next_before':before+50,
-                'schedule':'北京时间23:30起整理当天经历；同一天后续新增素材会更新同一篇，跨日或重启后可补写。没素材或不想写可留空。',
-                'notice':'日记包含以前的日记与随手感想，按日期归档；私密日记单独读取，不混入日记，也不会因查看而发布。'}
+                'schedule':'北京时间23:30起回顾当天；若已睡眠则醒后补写。平淡的一天也能留下感想，不要求先有阅读素材。不愿写会留下简短原因，失败待重试；事后补写明确标注。',
+                'notice':'公开日记是岚愿意给大家看的今日总结；私密笔记留给不想公开的感受、念头与秘密，仅管理员专门查阅，不自动混入公开日记、聊天或共享记忆。'}
 
     def media(self,name):
         if not re.fullmatch(r'[0-9a-f]{64}\.(png|jpg|gif|webp)',name):raise ValueError('未知图片')

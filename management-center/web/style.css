@@ -453,3 +453,58 @@ body.hasBalance .headerNote{display:none}
 .balanceBottom>span{font-size:9px;color:#8b97b2}
 .balanceBottom button{margin:0;padding:8px 12px;min-height:36px;font-size:11px;white-space:nowrap}
 @media(max-width:600px){.balanceWidget summary{gap:7px;padding:8px 10px;min-height:38px;border-radius:12px}.balanceBrand{font-size:0}.balanceBrand:after{content:'余额';font-size:10px}.balanceWidget summary strong{font-size:12px}.balanceDot,.balanceChevron{display:none}.balancePopover{width:290px;padding:18px;right:0}.balanceHeading h2{font-size:18px}.balanceTotal{font-size:28px}}
+/* The ration voice is deterministic page copy, kept separate from account data. */
+.balanceVoice{position:relative;margin:16px 0;padding:17px 18px;border:1px solid #d9dffb;border-radius:5px 20px 20px 20px;background:linear-gradient(135deg,#f0f3ff,#fafbff);color:#4b5686;line-height:1.8}
+.balanceVoiceLabel{display:block;color:#7c87ba;font-size:11px;letter-spacing:.1em;margin-bottom:7px}
+.balanceVoice p{margin:0;white-space:pre-wrap;font-size:15px;min-height:2.8em}
+.balanceVoiceNote{font-size:10px!important;line-height:1.6;color:#929bbc;margin:10px 0 0!important}
+.balanceWidget[data-tone="low"] .balanceVoice,.balanceWidget[data-tone="tiny"] .balanceVoice{background:#fff8ee;border-color:#efdfc8}
+.balanceWidget[data-tone="empty"] .balanceVoice{background:#fff3f6;border-color:#eedbe2}
+
+/* Public words are prepared while awake; rest states show the earlier note. */
+.archiveVoiceLabel{display:block;font-size:9px;letter-spacing:1px;color:#9a91b6;margin-top:14px}
+.archiveNow .archiveVoice{position:relative;margin:6px 0 0;padding:11px 14px;background:#ffffff96;border:1px solid #e4e5fb;border-radius:3px 14px 14px;color:#65739e;font-size:12px;line-height:1.9}
+.archiveNow .archiveVoice.isWaiting{color:#97a0b7;background:transparent;border-color:transparent;padding-left:0}
+.routineList.routinePeriods{display:block;margin-top:18px}
+.routinePeriods>div{align-items:center;padding:11px 0;gap:16px}
+.routinePeriods dt{white-space:nowrap;font-size:11px}
+.routinePeriods dd{font-variant-numeric:tabular-nums;font-size:12px;line-height:1.9}
+.routinePeriods dd span{display:block}
+.routinePeriods .routinePending{font-size:10px;color:#a0abc4;font-weight:400}
+@media(min-width:601px) and (max-width:1200px){.routineList.routinePeriods{display:grid;grid-template-columns:1fr 1fr;column-gap:26px;row-gap:0}.routinePeriods>div{flex:initial}}
+@media(max-width:600px){.archiveNow .archiveVoice{font-size:11px}.routinePeriods dd{font-size:11px}.archiveVoiceLabel{margin-top:10px}}
+
+/* Official daily costs stay distinct from current balance and missing data. */
+.balancePopover{max-height:calc(100dvh - 125px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.riceLedger{background:transparent;box-shadow:none;border:0;border-top:1px solid #e2e6f9;border-radius:0;padding:17px 0 0;margin:19px 0 0}
+.riceLedgerHead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px}
+.riceLedgerHead h3{font-size:13px;color:#4c598a;margin:0}.riceLedgerHead>span{font-size:8px;color:#949fbb}
+.riceLedgerGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.riceLedgerGrid>div{padding:13px 11px;border:1px solid #dfe4fb;border-radius:13px;background:#edf1ff85;min-width:0}
+.riceLedgerGrid>div+div{background:#f2effa85;border-color:#e6e0f3}
+.riceLedgerGrid span{display:block;font-size:10px;color:#7582aa;line-height:1.6}
+.riceLedgerGrid strong{display:block;margin:8px 0 5px;font-size:19px;font-weight:650;color:#5661b4;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.5}
+.riceLedgerGrid small{display:block;font-size:8px;line-height:1.5;color:#98a2bb}
+#riceLedgerNote{font-size:9px;line-height:1.8;color:#929cb6;margin:11px 0 0}
+.riceOfficialLink{display:inline-block;color:#7984b6;font-size:9px;margin-top:8px;text-underline-offset:3px}
+@media(max-width:600px){.balancePopover{max-height:calc(100dvh - 90px)}.riceLedgerGrid strong{font-size:17px}.riceLedgerGrid span{font-size:9px}.riceLedgerHead>span{font-size:7px}}
+
+.riceImport{margin-top:12px;border-top:1px solid #e6e9f8;padding-top:10px;font-size:10px;color:#8190b3}
+.riceImport summary{display:block;padding:0;min-height:0;background:none;box-shadow:none;border:0;border-radius:0;font-size:10px;color:#8190b3;cursor:pointer}
+.riceImport form{padding:12px 0 0}.riceImport p{font-size:9px;line-height:1.8;margin:0 0 10px}
+.riceImport label{display:block;margin:12px 0;font-size:10px}.riceImport input[type=file]{width:100%;max-width:100%;margin-top:7px;font-size:9px;padding:8px}
+.riceImport select{width:100%;max-width:100%;margin-top:7px;font-size:10px;padding:9px}
+.riceImport .riceConfirm{display:flex;align-items:flex-start;gap:7px;line-height:1.8;font-size:9px}.riceConfirm input{width:13px;height:13px;min-width:13px;margin:3px 0 0;box-shadow:none}
+.riceImport button{font-size:10px;padding:9px 12px;margin:0;min-height:35px}#riceImportError{margin-top:9px;color:#a07994;font-size:9px;overflow-wrap:anywhere}
+
+.riceAutoSetup .riceConnectIntro{margin:12px 0 0;font-size:10px;color:#8895b4;line-height:1.8}
+.riceAutoSetup input[type=password]{box-sizing:border-box;width:100%;min-width:0;margin-top:7px;font-size:11px;padding:10px 11px;min-height:38px}
+.riceAutoSetup button{width:100%}.riceConnectHelp{margin:13px 0;color:#929db7;font-size:9px}
+.riceConnectHelp summary{font-size:9px}.riceConnectHelp ol{padding-left:17px;margin:9px 0;line-height:1.9}.riceConnectHelp li+li{margin-top:5px}.riceConnectHelp code{overflow-wrap:anywhere;font-size:8px}
+#riceConnectStatus{font-size:9px;line-height:1.8;color:#8895b4;margin:10px 0 0;overflow-wrap:anywhere}
+button.riceDisconnect{margin:12px 0 0;padding:8px 10px;font-size:9px;min-height:33px;color:#a37c94;border-color:#eadde6;background:#fbf6f9;width:100%}
+.phoneConnection{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:12px 15px;margin:4px 0 14px;border:1px solid #e0e6f7;border-radius:11px;background:#f6f8ff}
+.phoneConnectionInfo{min-width:0}.phoneConnectionHeading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.phoneConnectionHeading strong{font-size:13px;color:#415780}.phoneStatus{font-size:11px;padding:3px 8px;border-radius:6px;background:#edf0fa;color:#65749b;border:1px solid #dce2f3}.phoneStatus[data-state=connected]{background:#eaf5f1;border-color:#cee5dc;color:#477d6b}.phoneStatus[data-state=disconnected],.phoneStatus[data-state=unauthorized],.phoneStatus[data-state=unresponsive],.phoneStatus[data-state=timeout]{background:#fbf0f3;border-color:#ecd7de;color:#a05c70}.phoneConnection #phoneRhythm{font-size:11px;line-height:1.7;margin:6px 0 2px;color:#677898}.phoneConnection #phoneCheckTime{font-size:10px;color:#8996b1}.phoneConnection #checkPhone{margin:0;min-height:38px;flex-shrink:0;font-size:11px;padding:8px 13px}
+@media(max-width:600px){.phoneConnection{padding:10px 12px;gap:10px}.phoneConnectionHeading{gap:7px}.phoneConnectionHeading strong{font-size:12px}.phoneConnection #checkPhone{min-height:44px;padding:8px 10px}.phoneConnection #phoneRhythm{font-size:10px}}
+.backendAccessHelp{font-size:10px;line-height:1.7;color:#8290ae;margin:0 0 10px}.phoneConnectionActions{display:flex;gap:8px;flex-shrink:0;align-items:center}.phoneConnectionActions button{margin:0;font-size:11px;padding:8px 12px;min-height:38px}.phoneReconnectForm{padding:14px 15px;margin:-5px 0 14px;border:1px solid #dfe5f5;border-radius:11px;background:#fff}.phoneReconnectForm>p{font-size:11px;line-height:1.8;color:#6d7d9c;margin:0 0 10px}.phoneReconnectFields{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.phoneReconnectFields label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#536891;flex:1;min-width:120px}.phoneReconnectFields input{width:100%;min-height:38px;margin:0;padding:8px 10px;border:1px solid #cbd6ee;border-radius:8px;font-size:12px;background:#f8faff}.phoneReconnectFields button{margin:0;min-height:38px;padding:8px 13px;font-size:11px}.phoneReconnectForm #phoneConnectResult{margin:10px 0 0;color:#566da1}
+@media(max-width:600px){.phoneConnectionActions{flex-direction:column;gap:6px}.phoneConnectionActions button{min-height:40px;width:100%;white-space:nowrap}.phoneReconnectFields label{min-width:90px}.phoneReconnectFields button{min-height:44px}}

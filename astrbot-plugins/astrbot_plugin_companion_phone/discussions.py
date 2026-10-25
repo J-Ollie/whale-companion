@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .phone import PhoneError
+from .activity import ActivityLedger
 from .publisher import load_json
 from .qzone_client import BOT_QQ, QzoneClient, QzoneError
 
@@ -54,6 +55,7 @@ class Discussions:
         self.root=Path(root)
         self.auth,self.phone,self.browser,self.guard=auth,phone,browser,guard
         self.path=self.root/'discussion-state.json'
+        self.activity=ActivityLedger(self.root)
         self.state={'seen':{},'replies':[]}
         if self.path.exists():
             self.state.update(json.loads(self.path.read_text(encoding='utf-8')))
@@ -114,6 +116,7 @@ class Discussions:
         client=await self.client()
         rows,total=await asyncio.to_thread(client.discussion_posts,offset,10)
         self.guard();self.remember(rows,offset)
+        self.activity.record('space_posts')
         more=len(rows)==10 and (not isinstance(total,int) or offset+len(rows)<total)
         return {'result':'read','posts':[self.public_post(r) for r in rows],
             'next_cursor':str(offset+len(rows)) if more else '',
@@ -149,6 +152,7 @@ class Discussions:
             public.append({k:v for k,v in c.items() if k!='author_id'}|{'is_self':c['author_id']==BOT_QQ,'new':c['comment_id'] not in seen})
             seen.add(c['comment_id'])
         self.state['seen'][post_id]=list(sorted(seen))[-300:];self.save()
+        self.activity.record('space_comments')
         count=row.get('cmtnum')
         roots=[c for c in all_rows if not c['parent_id']]
         missing=(not isinstance(count,int) or count>len(roots)) or any(

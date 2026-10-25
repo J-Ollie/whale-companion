@@ -49,10 +49,23 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.archive.snapshot(day='2026-02-30')
         self.rhythm['updated_at']=time.time()-700;self.save()
         self.assertEqual(self.archive.snapshot(True)['current']['state'],'unknown')
+
+    def test_actual_tool_receipt_and_night_reference_without_private_content(self):
+        import sqlite3
+        with sqlite3.connect(self.phone/'activity.sqlite3') as db:
+            db.execute('CREATE TABLE receipts(id TEXT,action TEXT,at REAL,last_at REAL,origin TEXT,count INTEGER)')
+            db.execute('INSERT INTO receipts VALUES(?,?,?,?,?,?)',('receipt','site_visitors',time.time(),time.time(),'tool',2))
+        data=self.archive.snapshot()
+        self.assertEqual(data['routine']['night_fallback_time'],'01:30')
+        entry=data['activity']['entries'][0]
+        self.assertEqual(entry['kind'],'reading');self.assertEqual(entry['count'],2)
+        self.assertIsNone(entry['duration_seconds'])
+        self.assertNotIn('activity',self.archive.snapshot(True))
         (self.phone/'rhythm.json').write_text('broken')
         self.assertEqual(self.archive.snapshot(True)['current']['state'],'unknown')
 
     def test_actual_chat_timestamp_only_and_no_stale_browsing(self):
+        self.rhythm.update(mode='awake');self.save()
         with patch.object(self.archive,'last_chat',return_value=time.time()-20):
             self.assertEqual(self.archive.snapshot(True)['current']['state'],'chatting')
         self.rhythm.update(mode='browsing',mode_since=time.time()-1000);self.save()

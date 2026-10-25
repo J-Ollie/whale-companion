@@ -239,6 +239,26 @@ class PhoneTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await p.invoke(e,fn)).isError)
         fn.assert_not_called()
 
+    async def test_only_completed_manual_actions_get_activity_receipts(self):
+        from astrbot_plugin_companion_phone.activity import ActivityLedger
+        p=self.plugin();p.activity=ActivityLedger(self.phone.root)
+        e=Event();fn=AsyncMock(return_value='done')
+        self.assertFalse((await p.invoke(e,fn,True,activity='phone_open')).isError)
+        import sqlite3
+        with sqlite3.connect(p.activity.path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM receipts').fetchone()[0],1)
+        fn.side_effect=PhoneError('not executed')
+        self.assertTrue((await p.invoke(e,fn,True,activity='phone_input')).isError)
+        with sqlite3.connect(p.activity.path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM receipts').fetchone()[0],1)
+
+    def test_diary_generation_waits_until_awake(self):
+        p=self.plugin()
+        rhythm=SimpleNamespace(healthy=True,advance=lambda:None,state={'mode':'asleep'})
+        p.autonomy=SimpleNamespace(rhythm=rhythm)
+        self.assertFalse(p.diary_ready())
+        rhythm.state['mode']='resting';self.assertFalse(p.diary_ready())
+        rhythm.state['mode']='awake';self.assertTrue(p.diary_ready())
+        rhythm.healthy=False;self.assertFalse(p.diary_ready())
+
     async def test_status_works_while_paused(self):
         p=self.plugin()
         self.phone.pause(True)
@@ -389,6 +409,35 @@ class PhoneTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(p.task_authorized(e),text)
         for text in ('不要打开Via','今天浏览网页了吗'):
             self.assertFalse(browse_request(text),text)
+
+    def test_phone_readiness_and_contextual_retry_are_manual_tasks(self):
+        p=self.plugin()
+        e=Event();e.message_str='你现在能控制手机了吗'
+        self.assertTrue(p.task_authorized(e))
+        for text in ('试试看吧','再试试','那就试一下','你再试一次'):
+            followup=Event();followup.message_str=text
+            self.assertTrue(p.task_authorized(followup),text)
+        explicit=Event();explicit.message_str='你走手动任务试试吧，修好了明天我不在你就也能玩手机了'
+        self.assertTrue(p.task_authorized(explicit))
+        autonomous=Event();autonomous.message_str='你试试自主去玩玩手机'
+        self.assertFalse(p.task_authorized(autonomous))
+
+    def test_retry_does_not_create_a_phone_task_without_recent_context(self):
+        for until in (0,time.monotonic()-1):
+            p=self.plugin();p.task_until=until
+            e=Event();e.message_str='试试看吧'
+            self.assertFalse(p.task_authorized(e))
+
+    async def test_retry_task_keeps_owner_sleep_and_screen_consent_checks(self):
+        p=self.plugin();p.task_until=time.monotonic()+60
+        e=Event();e.message_str='试试看吧'
+        other=Event(owner='12345');other.message_str=e.message_str
+        with self.assertRaises(PhoneError):p.guard(other)
+        p.autonomy=SimpleNamespace(rhythm=SimpleNamespace(advance=lambda:None,state={'mode':'asleep'}))
+        with self.assertRaises(PhoneError):p.guard(e)
+        p.autonomy.rhythm.state['mode']='awake'
+        p.config['allow_model_screen']=False
+        with self.assertRaises(PhoneError):p.guard(e,action=True)
 
     async def test_standing_initiative_needs_no_publish_phrase(self):
         p=self.plugin(); p.config.update(initiative_enabled=True,qzone_enabled=True)

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-from balance import DeepSeekBalance, NoRedirect
+from balance import DeepSeekBalance, NoRedirect,ration_voice
 from test_guest import GuestHttpTests
 
 
@@ -81,6 +81,19 @@ class BalanceTests(unittest.TestCase):
 
     def test_redirect_is_refused(self):
         self.assertIsNone(NoRedirect().redirect_request(None, None, 302, '', {}, 'https://evil.example'))
+
+    def test_ration_voice_thresholds_and_unknown_are_not_false_zero(self):
+        for amount,tone in [('100','full'),('68.33','steady'),('10','careful'),('1','low'),('.01','tiny'),('0','empty')]:
+            payload={'status':'ok','is_available':True,'balance_infos':[{'currency':'CNY','total_balance':amount}]}
+            self.assertEqual(ration_voice(payload)['tone'],tone)
+        self.assertEqual(ration_voice({'status':'error'})['tone'],'unknown')
+        self.assertIn('不代表',ration_voice({'status':'error'})['text'])
+
+    def test_voice_does_not_sum_currencies_or_use_rounded_display_amount(self):
+        payload={'status':'ok','is_available':True,'balance_infos':[{'currency':'CNY','total_balance':'0'},{'currency':'USD','total_balance':'5'}]}
+        self.assertEqual(ration_voice(payload)['tone'],'steady')
+        payload['balance_infos']=[{'currency':'CNY','total_balance':'0.0001'}]
+        self.assertEqual(ration_voice(payload)['tone'],'tiny')
 
 
 class BalanceHttpTests(GuestHttpTests):

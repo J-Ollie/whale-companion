@@ -24,6 +24,7 @@ async function prepareLogin(){
 function stamp(t){return t?new Date(t*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'尚未检查'}
 // Display-only metrics; status continues to come from the authenticated API.
 function renderDetails(d){
+  $('backendAccessHelp').hidden=accessRole==='guest'||!publicAccess;$('backendAccessHelp').textContent='服务器后台将在新标签页打开，仍需各自的登录验证。';
   const gateway=d.backend==='snowluma'?'SnowLuma':'NapCat';
   const metrics=[
     ['AstrBot',d.containers?.['qq-companion-astrbot']?.running,'运行中','未知 / 停止','http://127.0.0.1:16185/','AstrBot 管理后台（新标签页）'],
@@ -35,9 +36,18 @@ function renderDetails(d){
     const info=line('div','','metricInfo');
     info.append(line('span',label,'metricLabel'),line('span',ok?yes:no,'metricValue'));
     item.append(info);
-    if(url&&accessRole!=='guest'&&!publicAccess){
-      const jump=line('a','打开','metricJump');jump.href=url;jump.target='_blank';jump.rel='noopener noreferrer';
-      jump.setAttribute('aria-label',linkLabel);jump.title=linkLabel;jump.append(line('span','↗','metricArrow'));item.append(jump);
+    if(url&&accessRole!=='guest'){
+      const jump=line('a','打开','metricJump');
+      if(publicAccess)url=label==='AstrBot'?'/manage/astrbot/':label==='QQ 登录'?'/manage/qq/vnc.html?autoconnect=1&resize=scale&path=manage%2Fqq%2Fwebsockify':'/manage/snowluma/';
+      jump.href=url;jump.target='_blank';jump.rel='noopener noreferrer';
+      jump.setAttribute('aria-label',linkLabel);jump.title=linkLabel;
+      if(publicAccess)jump.onclick=async event=>{
+        event.preventDefault();if(!unlocked||accessRole!=='admin')return;const session=panelSession;
+        const popup=window.open('about:blank','_blank');if(popup)popup.opener=null;
+        try{await api('backend-access','POST');if(unlocked&&session===panelSession&&accessRole==='admin'){if(popup)popup.location.replace(new URL(url,location.origin).href);else location.assign(new URL(url,location.origin).href)}else if(popup)popup.close()}
+        catch(e){if(popup)popup.close();$('error').textContent=e.message}
+      };
+      jump.append(line('span','↗','metricArrow'));item.append(jump);
     }
     return item;
   }));
@@ -46,7 +56,7 @@ function renderDetails(d){
 function statusText(text){return text==='后台声称在线、连接存在；不代表实际消息一定可达'?'服务连接已建立，实际消息收发情况有待验证。':text||''}
 function applyAccessRole(role){
   accessRole=role==='guest'?'guest':'admin';document.body.dataset.access=accessRole;
-  const guest=accessRole==='guest',selected=$('book').value;
+  const guest=accessRole==='guest',selected=$('book').value;$('checkPhone').hidden=guest;$('showPhoneReconnect').hidden=guest;$('phoneReconnectForm').hidden=true;$('showPhoneReconnect').setAttribute('aria-expanded','false');$('phoneConnectIp').value='';$('phoneConnectPort').value='';$('phoneConnectResult').textContent='';previousPhoneStatus=null;
   resetVisitorView();$('visitorGuest').hidden=!guest;$('visitorAdmin').hidden=guest;$('tabVisitors').querySelector('.navNumber').textContent=guest?'04':'05';
   if(guest){try{$('visitorNickname').value=localStorage.getItem('whaleVisitorNickname')||''}catch{}}
   $('tabDiary').querySelector('.navNumber').textContent=guest?'02':'03';
@@ -57,12 +67,43 @@ function applyAccessRole(role){
   document.querySelector('.overviewHint').textContent=guest?'状态由系统定期更新，消息收发情况请通过测试文字核验。':'云端每分钟检查 · 本页打开时可提醒，关闭后不向外部渠道通知。在线状态不代表实际收发正常。';
   $('archiveMemoryNav').hidden=guest;$('tabChats').hidden=guest;$('recover').hidden=guest;$('notify').hidden=guest;$('recoveryHelp').hidden=guest;$('guestSession').hidden=!guest;
   const publicOption=line('option','日记');publicOption.value='public';
-  const options=[publicOption];if(!guest){const privateOption=line('option','私密日记');privateOption.value='private';options.push(privateOption);}
+  const options=[publicOption];if(!guest){const privateOption=line('option','私密笔记');privateOption.value='private';options.push(privateOption);}
   $('book').replaceChildren(...options);$('book').value=!guest&&selected==='private'?'private':'public';
   updateDiaryPrivacy();
 }
-async function status(){if(!unlocked)return;if(!publicAccess&&(!key||location.protocol!=='http:')){ $('badge').textContent='需要从桌面启动';$('summary').textContent='请双击桌面的“小鲸鱼管理中心”';for(const id of ['check','test','recover'])$(id).disabled=true;return;}if(busy)return;busy=true;try{const d=await api('status');$('summary').textContent=statusText(d.summary);$('badge').textContent=({error:'需要处理',warning:'待检查',unverified:'收发待核验',received:'入站已验证',unknown:'检查中'})[d.level]||'检查中';$('badge').dataset.level=d.level;$('time').textContent='最近检查：'+stamp(d.checked_at)+'（北京时间）';renderDetails(d);$('operation').textContent=d.operation?.message||'';$('recover').disabled=d.operation?.state==='running'||d.recovery_wait>0;$('cooldown').textContent=d.recovery_wait>0?`恢复按钮冷却剩余 ${Math.ceil(d.recovery_wait/60)} 分钟，防止反复重登`:'';
-if(d.challenge){$('challenge').hidden=false;$('testText').textContent=d.challenge.text;$('testResult').textContent=`QQ 接入：${d.challenge.napcat_received?'已收到':'尚未收到'}；聊天服务：${d.challenge.astrbot_received?'已收到':'尚未收到'}。`+(d.challenge.result==='waiting'?'请在两分钟内发送，正在检查':d.challenge.result==='received'?'入站链路已验证，请在 QQ 确认回复':'测试窗口已结束，若你确实发送了，则本轮未到达');}
+let previousPhoneStatus=null;
+function renderPhone(d){
+  const p=d.phone||{},rest=['asleep','resting'].includes(p.rhythm?.mode);
+  $('phoneStatus').textContent=p.label||'尚未检测';$('phoneStatus').dataset.state=p.status||'unknown';
+  $('phoneRhythm').textContent=(p.rhythm?.label||'作息状态暂不可用')+' · '+(rest?'暂不即时回复；连接检测不会打扰休息。':'连接检测不点亮屏幕，也不操作手机应用。');
+  $('phoneCheckTime').textContent=p.checked_at?'检测于 '+stamp(p.checked_at)+' · 每分钟自动检查':'等待首次检测';
+  if(p.status==='unauthorized')$('phoneRhythm').textContent+=' 请在备用机上确认调试授权。';
+  else if(['disconnected','unresponsive','timeout'].includes(p.status))$('phoneRhythm').textContent+=' 请检查备用机网络和无线调试，端口变化时重新连接。';
+  $('testHelp').textContent='请用主 QQ 将测试文字发给小鲸鱼（100000002），在此确认是否收到。'+(rest?'当前处于休息时段，只核验消息是否入站，醒后再确认回复。':'');
+  if(allowNotify&&accessRole==='admin'&&previousPhoneStatus==='connected'&&p.status&&p.status!=='connected'&&Notification.permission==='granted')new Notification('备用机连接异常',{body:p.label||'无线调试连接需要检查'});
+  previousPhoneStatus=p.status||null;
+}
+$('showPhoneReconnect').onclick=async()=>{
+  if(!unlocked||accessRole!=='admin')return;const session=panelSession;
+  $('phoneReconnectForm').hidden=false;$('showPhoneReconnect').setAttribute('aria-expanded','true');
+  $('phoneConnectResult').textContent='正在读取连接设置…';
+  try{const d=await api('phone-settings');if(!unlocked||session!==panelSession||accessRole!=='admin')return;$('phoneConnectIp').value=d.ip||'';$('phoneConnectPort').value=d.port||'';$('phoneConnectResult').textContent='';$('phoneConnectPort').focus()}catch(e){$('phoneConnectResult').textContent=e.message}
+};
+$('cancelPhoneConnect').onclick=()=>{$('phoneReconnectForm').hidden=true;$('showPhoneReconnect').setAttribute('aria-expanded','false')};
+$('phoneReconnectForm').onsubmit=async event=>{
+  event.preventDefault();if(!unlocked||accessRole!=='admin')return;const session=panelSession;
+  $('phoneConnectSubmit').disabled=true;$('phoneConnectResult').textContent='正在连接并验证备用机，不会点亮屏幕…';
+  try{const d=await api('phone-connect','POST',{ip:$('phoneConnectIp').value.trim(),port:$('phoneConnectPort').value});if(unlocked&&session===panelSession&&accessRole==='admin'){renderPhone({phone:d});$('phoneConnectResult').textContent='备用机已连通，新连接设置已保存。'}}catch(e){if(session===panelSession)$('phoneConnectResult').textContent=e.message}
+  finally{$('phoneConnectSubmit').disabled=false}
+};
+$('checkPhone').onclick=async()=>{
+  if(!unlocked||accessRole!=='admin')return;const session=panelSession;
+  $('checkPhone').disabled=true;$('checkPhone').textContent='检测中…';
+  try{const p=await api('phone-check','POST');if(unlocked&&accessRole==='admin'&&session===panelSession)renderPhone({phone:p})}catch(e){$('error').textContent=e.message}
+  finally{$('checkPhone').disabled=false;$('checkPhone').textContent='检测手机'}
+};
+async function status(){if(!unlocked)return;if(!publicAccess&&(!key||location.protocol!=='http:')){ $('badge').textContent='需要从桌面启动';$('summary').textContent='请双击桌面的“小鲸鱼管理中心”';for(const id of ['check','test','recover'])$(id).disabled=true;return;}if(busy)return;busy=true;try{const d=await api('status');$('summary').textContent=statusText(d.summary);$('badge').textContent=({error:'需要处理',warning:'待检查',unverified:'收发待核验',received:'入站已验证',unknown:'检查中'})[d.level]||'检查中';$('badge').dataset.level=d.level;$('time').textContent='最近检查：'+stamp(d.checked_at)+'（北京时间）';renderDetails(d);renderPhone(d);$('operation').textContent=d.operation?.message||'';$('recover').disabled=d.operation?.state==='running'||d.recovery_wait>0;$('cooldown').textContent=d.recovery_wait>0?`恢复按钮冷却剩余 ${Math.ceil(d.recovery_wait/60)} 分钟，防止反复重登`:'';
+if(d.challenge){$('challenge').hidden=false;$('testText').textContent=d.challenge.text;$('testResult').textContent=`QQ 接入：${d.challenge.napcat_received?'已收到':'尚未收到'}；聊天服务：${d.challenge.astrbot_received?'已收到':'尚未收到'}。`+(d.challenge.result==='waiting'?'请在两分钟内发送，正在检查':d.challenge.result==='received'?(['asleep','resting'].includes(d.phone?.rhythm?.mode)?'入站链路已验证；当前正在休息，醒后再确认回复':'入站链路已验证，请在 QQ 确认回复'):(['asleep','resting'].includes(d.phone?.rhythm?.mode)&&d.challenge.napcat_received?'QQ 已收到测试文字；当前处于休息时段，尚不能以未即时回复判断断线':'测试窗口已结束，若你确实发送了，则本轮未到达'));}
 const eventsScroll=$('events').scrollTop;$('events').replaceChildren(...(d.events||[]).slice().reverse().map(e=>{const li=document.createElement('li');li.textContent=stamp(e.at)+' · '+statusText(e.summary||e.message||({qr_refreshed:'已刷新登录二维码',recovery_requested:'手动恢复接入',monitor_error:'状态检查异常'})[e.kind]||e.kind);return li}));$('events').scrollTop=eventsScroll;if(allowNotify&&previousLevel!==null&&d.level!==previousLevel&&['error','warning'].includes(d.level)&&Notification.permission==='granted')new Notification('小鲸鱼连接异常',{body:d.summary});previousLevel=d.level;document.title=(d.level==='error'?'⚠ ':'')+'小鲸鱼管理中心';$('error').textContent='';}catch(e){$('error').textContent=e.message+(publicAccess?'；请稍后刷新重试':'；请确认本地 SSH 隧道已连接')}finally{busy=false}}
 async function action(name){try{await api(name,'POST');await status()}catch(e){$('error').textContent=e.message}}
 $('check').onclick=()=>action('check');$('test').onclick=()=>action('test');$('recover').onclick=()=>action('recover');$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('testText').textContent);$('copy').textContent='已复制'}catch{$('error').textContent='请手动选中并复制测试文字'}};$('notify').onclick=async()=>{if(!('Notification'in window)){ $('error').textContent='当前浏览器不支持通知';return;}allowNotify=await Notification.requestPermission()==='granted';$('notify').textContent=allowNotify?'已开启本页提醒':'未授权通知';};setInterval(()=>{if(unlocked)status()},5000);
@@ -132,18 +173,19 @@ function renderDiaryRows(book){
   const cards=[];
   for(const [day,rows] of groups){
     const card=document.createElement('article');card.className='diaryEntry diaryDay';
-    const header=line('div','','diaryDayHeader');header.append(line('h3',day+' · '+(book==='private'?'私密日记':'日记')));
+    const header=line('div','','diaryDayHeader');header.append(line('h3',day+' · '+(book==='private'?'私密笔记':'日记')));
     if(rows.length>1)header.append(line('span',rows.length+' 则记录','diaryDayCount'));
     card.append(header);
     for(const row of rows.slice().sort((a,b)=>(a.at||0)-(b.at||0))){
       const part=line('div','','diaryPart');
       const time=row.at?new Date(row.at*1000).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'时间未记录';
-      part.append(line('p',time+(row.updated_at?' · 更新于 '+stamp(row.updated_at):''),'entryMeta'));
+      part.append(line('p',(row.kind==='no_entry'?'未写日记的说明 · ':'')+time+
+        (row.retrospective?(row.kind==='no_entry'?' · 后来补录，不是当时想法':' · 事后补写，并非当晚原稿'):'')+(row.updated_at?' · 更新于 '+stamp(row.updated_at):''),'entryMeta'));
       part.append(line('p',row.text,'diaryText'));card.append(part);
     }
     cards.push(card);
   }
-  $('diaryEntries').replaceChildren(...(cards.length?cards:[line('p','这本日记暂时没有条目。当天日记会在晚间整理，有素材且想写时才写。','hint')]));
+  $('diaryEntries').replaceChildren(...(cards.length?cards:[line('p',book==='private'?'这里留给不想公开的感受与念头，暂时还没有笔记。':'当天日记会在晚间回顾，平淡的一天也可以留几句话。','hint')]));
 }
 async function loadDiary(older=false){
   const request=++diaryRequest,book=accessRole==='guest'?'public':$('book').value;
@@ -181,6 +223,7 @@ function renderArchiveActivity(){
     if((r.kind||'browse')==='browse')item.append(line('small','记录完成 · '+(r.views??'—')+' 个有效画面 / '+(r.observations??'—')+' 次观察'));
     else if(r.kind==='qzone')item.append(line('small','发布尝试时间 · '+(r.has_image?'含配图':'未附图')+' · '+(r.author||'创作来源未记录')));
     else if(r.kind==='phone_attempt')item.append(line('small','检查时间 · 访问尝试不等于已完成使用'));
+    else if(r.kind==='reading'||r.kind==='phone_action')item.append(line('small','实际工具回执'+(r.count>1?' · 合并 '+r.count+' 次':'')+' · 不推算浏览时长'));
     return item;
   }):[line('p','这一天还没有保存的活动记录。','archiveEmpty')]));
 }
@@ -192,12 +235,18 @@ async function loadArchive(quiet=false){
     const d=await api('archive'+(day?'?day='+encodeURIComponent(day):''));
     if(request!==archiveRequest||!unlocked)return;
     archiveData=d;$('archiveName').textContent=d.profile.name;$('archiveState').textContent=d.current.label;
-    $('archiveStateNote').textContent=d.current.stale?'最近状态已过期，等待下一次更新。':d.current.note;
+    $('archiveVoiceLabel').textContent=d.current.is_leave_note?'休息前留的话':'此刻的小声话';
+    $('archiveStateNote').textContent=d.current.stale?'状态更新后，再听听它想说什么。':d.current.note||'它还没有留下一句话，晚些时候再来看看。';
+    $('archiveStateNote').classList.toggle('isWaiting',d.current.voice_source!=='self_written'||d.current.stale);
     $('archiveMascot').src=['asleep','resting'].includes(d.current.state)?'/companion-winter-sleep.webp':'/companion-maid-awake.webp';
     $('archiveTraits').textContent=d.profile.traits;$('archiveTraitsKind').textContent=d.profile.traits_kind;
-    $('archiveWake').textContent=d.routine.wake_time||'尚未记录';$('archiveSleep').textContent=d.routine.sleep_hours==null?'尚未记录':'约 '+d.routine.sleep_hours+' 小时';
-    $('archiveUntilLabel').textContent=d.current.state==='asleep'?'预计醒来':'预计结束休息';
-    $('archiveUntil').textContent=d.routine.until?stamp(d.routine.until):'随当前状态安排';
+    $('archiveRoutinePeriods').replaceChildren(...(d.routine.periods||[]).map(period=>{
+      const row=line('div'),times=line('dd');row.append(line('dt',period.label),times);
+      if(period.windows?.length){for(const window of period.windows){const next=window.end<=window.start?'（次日）':'';times.append(line('span',window.start+' — '+window.end+next));}}
+      else times.append(line('span','尚未安排','routinePending'));
+      return row;
+    }));
+    $('archiveRoutineNote').textContent=d.routine.note;
     $('archiveUpdated').textContent='状态记录：'+stamp(d.current.updated_at)+' · 每 30 秒更新';
     $('archiveAdmin').hidden=guest||!d.activity;
     if(!guest&&d.activity){
@@ -244,11 +293,17 @@ async function loadMemories(offset=0){
     if(recentRecall)$('memoryNotice').textContent+=' 最近回忆：'+stamp(recentRecall.at)+'，'+(recentRecall.operation==='read'?'核对原文':'检索')+' '+recentRecall.matched_count+' 条。';
     $('memoryEntries').replaceChildren(...(d.entries.length?d.entries.map(r=>{
       const item=line('article','','memoryEntry'),top=line('div','','memoryEntryTop');
-      top.append(line('span',labels[r.kind]||'其他记忆','archiveTag'),line('span',r.expires==null?'长期记忆':'限期记忆','archiveTag'));
-      if(r.pinned)top.append(line('span','手动固定','memoryPinned'));if(r.expired)top.append(line('span','已过期','memoryExpired'));
+      const types={semantic:'稳定知识',plan:'计划与约定',state:'短时状态',working:'当前话题',episode:'情景记忆',impression:'主观印象',self_model:'自我档案'};
+      const states={past_due:'已过时，完成情况待确认',historical:'历史记录',cancelled:'已取消',completed:'本人说已完成',conflicted:'存在冲突，待核对'};
+      top.append(line('span',labels[r.kind]||'其他记忆','archiveTag'),line('span',types[r.memory_type]||(r.expires==null?'长期保存':'限期记录'),'archiveTag'));
+      if(r.pinned)top.append(line('span','手动固定','memoryPinned'));if(states[r.status])top.append(line('span',states[r.status],'memoryExpired'));
+      else if(r.expired)top.append(line('span','旧期限已到','memoryExpired'));
+      if(r.review_due)top.append(line('span','需重新核对','archiveTag'));
       item.append(top,line('h4',r.topic),line('p',r.text));
       const meta=line('div','','memoryMeta');meta.append(line('span','更新于 '+stamp(r.updated)),line('span','建立于 '+stamp(r.created)),line('span',r.evidence_count+' 条依据'));
       if(r.expires!=null)meta.append(line('span','到期 '+stamp(r.expires)));
+      if(r.valid_to!=null)meta.append(line('span','适用至 '+stamp(r.valid_to)));
+      if(r.source_kind)meta.append(line('span',({self_report:'本人陈述',manual:'人工固定',conversation:'对话记录',inference:'推断或感想'})[r.source_kind]||'待核对来源'));
       item.append(meta);
       if(r.evidence_count){
         const button=line('button','查看原文依据','secondary'),evidence=line('div','','memoryEvidence');evidence.hidden=true;
@@ -297,16 +352,20 @@ $('guestLogin').onclick=async()=>{
   }catch(e){$('authError').textContent=e.message}finally{$('guestLogin').disabled=false}
 };
 $('adminLogin').onclick=()=>showLogin(false);
-let balanceTimer=null,balanceRequest=0,balanceLoading=false;
+let balanceTimer=null,balanceRequest=0,balanceLoading=false,billingRequest=0,billingLoading=false,billingImportReport=null;
+let riceConnectionId='',riceConnectRequest=0;
 function resetBalance(){
-  clearInterval(balanceTimer);balanceTimer=null;++balanceRequest;balanceLoading=false;
+  clearInterval(balanceTimer);balanceTimer=null;++balanceRequest;balanceLoading=false;++billingRequest;billingLoading=false;
+  resetRiceConnection();resetRiceImport();
+  $('whaleTodayCost').textContent='—';$('accountTodayCost').textContent='—';$('riceLedgerDay').textContent='北京时间';$('riceLedgerNote').textContent='用餐记录还没接上，今天吃了多少先不乱报。';
   $('balanceWidget').hidden=true;$('balanceWidget').open=false;document.body.classList.remove('hasBalance');
   $('balanceValue').textContent='—';$('balanceRows').replaceChildren();$('balanceState').textContent='';$('balanceTime').textContent='每分钟更新';$('refreshBalance').disabled=false;
+  $('balanceWhaleLine').textContent='';$('balanceVoiceNote').textContent='';
 }
 function startBalance(){
   resetBalance();if(!unlocked||accessRole!=='admin')return;
-  $('balanceWidget').hidden=false;document.body.classList.add('hasBalance');loadBalance();
-  balanceTimer=setInterval(()=>{if(!document.hidden)loadBalance()},60000);
+  $('balanceWidget').hidden=false;document.body.classList.add('hasBalance');loadBalance();loadBilling();
+  balanceTimer=setInterval(()=>{if(!document.hidden){loadBalance();loadBilling()}},60000);
 }
 function balanceAmount(row,field='total_balance'){
   return (row.currency==='CNY'?'¥':'$')+Number(row[field]).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:4});
@@ -317,10 +376,13 @@ async function loadBalance(){
   try{
     const d=await api('balance');if(request!==balanceRequest||!unlocked||accessRole!=='admin')return;
     const ok=d.status==='ok';$('balanceWidget').dataset.state=ok?(d.is_available?'ok':'empty'):'error';
+    $('balanceWidget').dataset.tone=d.voice?.tone||'unknown';
+    $('balanceWhaleLine').textContent=d.voice?.text||'饭缸暂时看不清，等会儿再看看';
+    $('balanceVoiceNote').textContent=d.voice?.notice||'按余额切换的页面文案，不是实时聊天。';
     $('balanceRows').replaceChildren();
     if(ok){
       $('balanceValue').textContent=d.balance_infos.map(r=>balanceAmount(r)).join(' / ');
-      $('balanceState').textContent=d.is_available?'账户余额可用':'当前账户无可用余额';
+      $('balanceState').textContent=d.voice?.label||(d.is_available?'余粮可用':'暂无可用余粮');
       for(const row of d.balance_infos){
         const card=line('div','','balanceCurrency');card.append(line('span',row.currency==='CNY'?'人民币 · CNY':'美元 · USD','balanceCurrencyName'),line('strong',balanceAmount(row),'balanceTotal'));
         const split=line('div','','balanceSplit');split.append(line('span','充值余额 '+balanceAmount(row,'topped_up_balance')),line('span','赠金 '+balanceAmount(row,'granted_balance')));card.append(split);$('balanceRows').append(card);
@@ -331,10 +393,110 @@ async function loadBalance(){
       $('balanceState').textContent=({unconfigured:'尚未配置官方 DeepSeek API 密钥。',multiple_accounts:'检测到多个 DeepSeek 密钥，需要先指定查询账户。',invalid_key:'密钥无效或权限不足，请检查服务器配置。',rate_limited:'查询较频繁，请稍后重试。'})[d.code]||'暂时无法查询余额，请稍后重试。';
       $('balanceTime').textContent='每分钟重试';
     }
-  }catch(e){if(request===balanceRequest&&unlocked&&accessRole==='admin'){$('balanceValue').textContent='暂不可用';$('balanceState').textContent='余额查询失败，请稍后重试。';$('balanceRows').replaceChildren()}}
+  }catch(e){if(request===balanceRequest&&unlocked&&accessRole==='admin'){$('balanceValue').textContent='暂不可用';$('balanceState').textContent='余粮查询失败，请稍后重试。';$('balanceWhaleLine').textContent='我没看清饭缸，不代表已经没米了。等会儿再看看';$('balanceRows').replaceChildren()}}
   finally{if(request===balanceRequest){balanceLoading=false;$('refreshBalance').disabled=false}}
 }
-$('refreshBalance').onclick=()=>loadBalance();
+function riceAmount(row,field){
+  const value=Number(row[field]),symbol=row.currency==='CNY'?'¥':'US$';
+  return value>0&&value<0.000001?'< '+symbol+'0.000001':symbol+value.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:6});
+}
+async function loadBilling(){
+  if(billingLoading||!unlocked||accessRole!=='admin')return;
+  billingLoading=true;const request=++billingRequest;
+  try{
+    const d=await api('usage');if(request!==billingRequest||!unlocked||accessRole!=='admin')return;
+    $('riceLedgerDay').textContent=(d.day||'')+' · 北京时间';
+    $('riceDisconnect').hidden=d.connected!==true;$('riceImport').hidden=true;
+    $('riceAutoSummary').textContent=d.connected===true?'重新连接 / 更换官网授权':'连接官网自动记账';
+    if(d.status==='ok'&&d.costs?.length){
+      $('whaleTodayCost').textContent=d.costs.map(r=>riceAmount(r,'whale_cost')).join(' / ');
+      $('accountTodayCost').textContent=d.costs.map(r=>riceAmount(r,'account_cost')).join(' / ');
+      const time=d.checked_at?new Date(d.checked_at*1000).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'';
+      $('riceLedgerNote').textContent=d.message+(time?' 更新于 '+time+'。':'');
+    }else{
+      $('whaleTodayCost').textContent='—';$('accountTodayCost').textContent='—';
+      $('riceLedgerNote').textContent=d.message||'今天的用餐记录暂时没翻开，不能当作一粒米都没吃。';
+    }
+  }catch(e){if(request===billingRequest&&unlocked&&accessRole==='admin'){$('whaleTodayCost').textContent='—';$('accountTodayCost').textContent='—';$('riceLedgerNote').textContent='今天的用餐记录暂时没翻开，不能当作一粒米都没吃。'}}
+  finally{if(request===billingRequest)billingLoading=false}
+}
+function resetRiceConnection(){
+  ++riceConnectRequest;riceConnectionId='';$('riceAutoSetup').open=false;$('ricePlatformToken').value='';
+  $('riceKeyForm').hidden=true;$('riceConnectedKey').replaceChildren();$('riceConnectConfirm').checked=false;
+  $('riceConnectStatus').textContent='';$('riceConnectSubmit').disabled=false;$('riceSelectSubmit').disabled=false;
+  $('riceDisconnect').hidden=true;$('riceDisconnect').disabled=false;$('riceImport').hidden=true;
+  $('riceAutoSummary').textContent='连接官网自动记账';
+}
+$('riceConnectForm').onsubmit=async event=>{
+  event.preventDefault();if(!unlocked||accessRole!=='admin')return;
+  const request=++riceConnectRequest,token=$('ricePlatformToken').value;
+  $('ricePlatformToken').value='';$('riceConnectSubmit').disabled=true;$('riceKeyForm').hidden=true;
+  $('riceConnectStatus').textContent='正在验证官网授权…';riceConnectionId='';
+  try{
+    const d=await api('usage/connect','POST',{token});
+    if(request!==riceConnectRequest||!unlocked||accessRole!=='admin')return;
+    riceConnectionId=d.connection_id;
+    $('riceConnectedKey').replaceChildren(new Option('请选择小鲸鱼的专用 Key',''),...d.keys.map(k=>new Option(k.name+(k.match===true?' · 与现用 Key 匹配':' · 请核对名称'),k.id)));
+    const matched=d.keys.filter(k=>k.match===true);if(matched.length===1)$('riceConnectedKey').value=matched[0].id;
+    $('riceConnectConfirm').checked=false;$('riceKeyForm').hidden=false;
+    $('riceConnectStatus').textContent='官网授权已验证，请在3分钟内确认小鲸鱼使用的 Key。';
+  }catch(e){if(request===riceConnectRequest)$('riceConnectStatus').textContent=e.message}
+  finally{if(request===riceConnectRequest)$('riceConnectSubmit').disabled=false}
+};
+$('riceKeyForm').onsubmit=async event=>{
+  event.preventDefault();if(!riceConnectionId||!unlocked||accessRole!=='admin')return;
+  const request=riceConnectRequest;$('riceSelectSubmit').disabled=true;$('riceConnectStatus').textContent='正在收好饭票并读取今日账单…';
+  try{
+    await api('usage/select','POST',{connection_id:riceConnectionId,key_id:$('riceConnectedKey').value,confirmed:$('riceConnectConfirm').checked});
+    if(request!==riceConnectRequest||!unlocked||accessRole!=='admin')return;
+    resetRiceConnection();++billingRequest;billingLoading=false;await loadBilling();
+  }catch(e){if(request===riceConnectRequest)$('riceConnectStatus').textContent=e.message}
+  finally{if(request===riceConnectRequest)$('riceSelectSubmit').disabled=false}
+};
+$('riceDisconnect').onclick=async()=>{
+  if(!unlocked||accessRole!=='admin')return;
+  const request=riceConnectRequest;$('riceDisconnect').disabled=true;
+  try{
+    await api('usage/disconnect','POST');if(request!==riceConnectRequest||!unlocked||accessRole!=='admin')return;
+    resetRiceConnection();++billingRequest;billingLoading=false;await loadBilling();
+  }catch(e){if(request===riceConnectRequest)$('riceConnectStatus').textContent=e.message}
+  finally{if(request===riceConnectRequest)$('riceDisconnect').disabled=false}
+};
+function resetRiceImport(){
+  billingImportReport=null;$('riceImport').open=false;$('riceImportFile').value='';$('riceImportConfirm').checked=false;
+  $('riceImportKey').replaceChildren(new Option('先选择费用数据文件',''));$('riceImportKey').disabled=true;
+  $('riceImportSubmit').disabled=true;$('riceImportError').textContent='';
+}
+$('riceImportFile').onchange=async()=>{
+  billingImportReport=null;$('riceImportSubmit').disabled=true;$('riceImportKey').disabled=true;$('riceImportError').textContent='';
+  const request=billingRequest,file=$('riceImportFile').files[0];if(!file)return;
+  try{
+    if(file.size>2*1024*1024)throw Error('文件超过2MB，请缩小到今天的费用数据。');
+    const value=JSON.parse(await file.text());
+    if(request!==billingRequest||!unlocked||accessRole!=='admin')return;
+    const data=value?.data?.biz_data;if(value.code!==0||value.data.biz_code!==0||!Array.isArray(data?.data))throw Error('请使用官网成功返回的费用明细 JSON。');
+    const names=new Map();
+    const groups=data.data.map(group=>({currency:group.currency,series:group.series.map(row=>{
+      const key=row.api_key,tracking=key?.tracking_id,name=String(key?.name||'未命名 Key');
+      if(typeof tracking==='string')names.set(tracking,/sk-|token|bearer|https?:|\d{5,}/i.test(name)?'所选 Key':name.slice(0,60));
+      return {api_key:typeof tracking==='string'?{tracking_id:tracking,name:names.get(tracking)}:null,model:row.model,buckets:row.buckets.map(bucket=>({time:bucket.time,cost:bucket.cost}))};
+    })}));
+    if(!names.size)throw Error('数据中没有可选择的 Key，请检查导出的范围。');
+    billingImportReport={code:0,data:{biz_code:0,biz_data:{start:data.start,end:data.end,bucket:data.bucket,data:groups}}};
+    $('riceImportKey').replaceChildren(new Option('请选择小鲸鱼的专用 Key',''),...Array.from(names,([id,name])=>new Option(name,id)));
+    $('riceImportKey').disabled=false;$('riceImportSubmit').disabled=false;
+  }catch(e){if(request===billingRequest)$('riceImportError').textContent=e instanceof SyntaxError?'文件不是有效 JSON。':e.message}
+};
+$('riceImportForm').onsubmit=async event=>{
+  event.preventDefault();if(!billingImportReport||!unlocked||accessRole!=='admin')return;
+  const request=billingRequest;$('riceImportSubmit').disabled=true;$('riceImportError').textContent='';
+  try{
+    await api('usage/import','POST',{report:billingImportReport,key_id:$('riceImportKey').value,confirmed_all_keys:$('riceImportConfirm').checked});
+    if(request!==billingRequest||!unlocked||accessRole!=='admin')return;
+    resetRiceImport();await loadBilling();
+  }catch(e){if(request===billingRequest){$('riceImportError').textContent=e.message;$('riceImportSubmit').disabled=false}}
+};
+$('refreshBalance').onclick=()=>{loadBalance();loadBilling()};
 document.addEventListener('click',event=>{if(!$('balanceWidget').contains(event.target))$('balanceWidget').open=false});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('balanceWidget').open){$('balanceWidget').open=false;$('balanceWidget').querySelector('summary').focus()}});
 const navigationTabs=['Connection','Chats','Diary','Archive','Visitors'];

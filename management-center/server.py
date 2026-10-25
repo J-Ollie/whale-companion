@@ -17,6 +17,10 @@ from panel_auth import PanelAuth
 from archive import Archive
 from visitors import Visitors
 from balance import DeepSeekBalance
+from phone_health import PhoneHealth, project as phone_public
+from billing import DeepSeekBilling
+from platform_billing import PlatformBilling
+from presence import PublicPresence
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -123,6 +127,7 @@ class Monitor:
         self.challenge = None
         self.operation = {'state': 'idle', 'message': ''}
         self.stop = threading.Event()
+        self.phone = PhoneHealth(ROOT,command,ASTRBOT)
 
     def event(self, kind, details):
         # Only fixed diagnostic metadata belongs in this journal.
@@ -192,6 +197,7 @@ class Monitor:
             except Exception:
                 pass
             result.update(backend=self.backend, gateway_container=self.gateway)
+            result['phone']=self.phone.query()
             if not all(result['containers'].get(n, {}).get('running') for n in (self.gateway, ASTRBOT)):
                 result.update(level='error', summary='服务容器未运行或无法读取')
             elif not result['qq']:
@@ -205,13 +211,19 @@ class Monitor:
             with self.lock:
                 challenge = self.challenge
                 if challenge and challenge['result'] == 'not_received':
-                    result.update(level='error', summary='本轮测试超时未到达聊天服务，可能假在线；请确认已发送测试文字')
+                    if result['phone']['rhythm']['mode'] in ('asleep','resting') and challenge.get('napcat_received'):
+                        result.update(level='unverified',summary='QQ 已接收测试消息，小鲸鱼正在休息或睡觉；即时回复不作为连接故障依据。')
+                    else:
+                        result.update(level='error', summary='本轮测试超时未到达聊天服务，可能假在线；请确认已发送测试文字')
                 elif challenge and challenge['result'] == 'received' and time.time() - challenge['first_received_at'] < 300 and result['level'] == 'unverified':
                     result.update(level='received', summary='近期测试消息已到达聊天服务；回复是否收到仍需你确认')
                 old = (self.snapshot.get('level'), self.snapshot.get('summary'))
+                old_phone=self.snapshot.get('phone',{}).get('status')
                 self.snapshot = result
             if old != (result['level'], result['summary']):
                 self.event('health_changed', {'level': result['level'], 'summary': result['summary']})
+            if old_phone and old_phone!=result['phone']['status']:
+                self.event('phone_connection_changed',{'message':'备用机：'+result['phone']['label']})
         finally:
             self.probe_lock.release()
 
@@ -228,6 +240,21 @@ class Monitor:
             return {**self.snapshot, 'challenge': self.challenge, 'operation': self.operation,
                     'recovery_wait': max(0, int(COOLDOWN - (time.time() - self.persist['last_recovery']))),
                     'events': events}
+
+    def check_phone(self):
+        value=self.phone.query()
+        with self.lock:
+            old=self.snapshot.get('phone',{}).get('status')
+            self.snapshot['phone']=value
+        if old and old!=value['status']:
+            self.event('phone_connection_changed',{'message':'备用机：'+value['label']})
+        return value
+
+    def reconnect_phone(self,ip,port):
+        value=self.phone.reconnect(ip,port)
+        with self.lock:self.snapshot['phone']=value
+        self.event('phone_connection_changed',{'message':'备用机无线调试已验证并更新连接设置'})
+        return value
 
     def new_challenge(self):
         with self.lock:
@@ -329,18 +356,20 @@ def guest_status(snapshot):
     names=(ASTRBOT,'qq-companion-snowluma','qq-companion-napcat')
     result['containers']={name:{'running':bool(row.get('running'))} for name,row in snapshot.get('containers',{}).items() if name in names and isinstance(row,dict)}
     result['qq']={'isLogin':bool((snapshot.get('qq') or {}).get('isLogin'))}
+    result['phone']=phone_public(snapshot.get('phone'))
     result['events']=[{k:row[k] for k in ('at','summary','message','kind') if k in row} for row in snapshot.get('events',[]) if isinstance(row,dict)]
     challenge=snapshot.get('challenge')
     result['challenge']={k:challenge[k] for k in ('text','created','expires','napcat_received','astrbot_received','first_received_at','result') if k in challenge} if isinstance(challenge,dict) else None
     return result
 
 
-def make_handler(monitor, token, public_origin='', public_token=''):
+def make_handler(monitor, token, public_origin='', public_token='', billing_service=None):
     library=Library(ROOT)
     archive=Archive(ROOT)
     auth=PanelAuth(ROOT/'recovery-data')
     visitors=Visitors(ROOT)
     balance=DeepSeekBalance(ROOT)
+    billing=billing_service or PlatformBilling(ROOT)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass  # No access log containing fragments, QR data or authentication.
@@ -354,6 +383,8 @@ def make_handler(monitor, token, public_origin='', public_token=''):
             self.send_header('Cache-Control', 'no-store')
             if getattr(self,'visitor_cookie',None):
                 self.send_header('Set-Cookie','whale_visitor='+self.visitor_cookie+'; Path=/; Max-Age=15552000; HttpOnly; SameSite=Lax'+('; Secure' if self.public_request() else ''))
+            if getattr(self,'backend_cookie',None) is not None:
+                self.send_header('Set-Cookie',self.backend_cookie)
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('X-Frame-Options', 'DENY')
             self.send_header('Referrer-Policy', 'no-referrer')
@@ -409,6 +440,14 @@ def make_handler(monitor, token, public_origin='', public_token=''):
             if not self.authorized():
                 self.reply(403, {'error': '请通过本地“检查与恢复”入口打开'})
                 return
+            if self.path=='/api/backend-auth':
+                cookie=SimpleCookie()
+                try:cookie.load(self.headers.get('Cookie',''))
+                except Exception:pass
+                value=cookie.get('whale_backend')
+                allowed=self.public_request() and auth.role(value.value if value else '')=='admin'
+                self.reply(204,b'') if allowed else self.reply(403,{'error':'请先在管理中心以管理员身份登录'})
+                return
             if self.path=='/api/auth/info':
                 self.reply(200,{**auth.info(), 'public_access': self.public_request()})
                 return
@@ -421,6 +460,12 @@ def make_handler(monitor, token, public_origin='', public_token=''):
                 query=parse_qs(route.query)
                 if role=='guest' and not (route.path in ('/api/status','/api/archive') or (route.path=='/api/diaries' and query.get('book',['public'])[0]=='public')):
                     self.reply(403,{'error':'访客无权访问此内容','code':'guest_forbidden'})
+                    return
+                if route.path=='/api/usage':
+                    self.reply(200,billing.query())
+                    return
+                if route.path=='/api/phone-settings':
+                    self.reply(200,monitor.phone.settings())
                     return
                 if route.path=='/api/balance':
                     self.reply(200,balance.query())
@@ -467,7 +512,13 @@ def make_handler(monitor, token, public_origin='', public_token=''):
                 return
             try:
                 length = int(self.headers.get('Content-Length', '0'))
-                if not 0 <= length <= 4096:
+                limit=4096
+                if self.path=='/api/usage/import':
+                    if auth.role(self.headers.get('X-Panel-Session',''))!='admin':
+                        self.reply(403,{'error':'仅管理员可导入账单'})
+                        return
+                    limit=2*1024*1024
+                if not 0 <= length <= limit:
                     raise ValueError('请求过大')
                 body=json.loads(self.rfile.read(length) or b'{}')
                 if not isinstance(body,dict):raise ValueError('请求格式不正确')
@@ -482,6 +533,7 @@ def make_handler(monitor, token, public_origin='', public_token=''):
                         self.reply(400,{'error':str(exc)})
                     return
                 if self.path=='/api/auth/guest':
+                    self.backend_cookie='whale_backend=; Path=/manage/; Max-Age=0; HttpOnly; Secure; SameSite=Strict'
                     try:self.reply(200,auth.guest())
                     except ValueError as exc:self.reply(400,{'error':str(exc)})
                     return
@@ -502,8 +554,32 @@ def make_handler(monitor, token, public_origin='', public_token=''):
                 if role=='guest' and self.path not in ('/api/check','/api/test'):
                     self.reply(403,{'error':'访客无权执行此操作','code':'guest_forbidden'})
                     return
+                if self.path == '/api/usage/import':
+                    if billing.path.exists():raise ValueError('自动同步已连接，请先断开再导入账单。')
+                    self.reply(200,billing.ledger.import_report(body.get('report'),body.get('key_id'),body.get('confirmed_all_keys')))
+                    return
+                if self.path == '/api/backend-access':
+                    if not self.public_request():raise ValueError('请从公网管理中心打开服务器后台。')
+                    self.backend_cookie='whale_backend='+self.headers.get('X-Panel-Session','')+'; Path=/manage/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict'
+                    self.reply(200,{'ok':True})
+                    return
+                if self.path == '/api/usage/connect':
+                    self.reply(200,billing.connect(body.get('token'),self.headers.get('X-Panel-Session','')))
+                    return
+                if self.path == '/api/usage/select':
+                    self.reply(200,billing.select(body.get('connection_id'),body.get('key_id'),self.headers.get('X-Panel-Session',''),body.get('confirmed')))
+                    return
+                if self.path == '/api/usage/disconnect':
+                    self.reply(200,billing.disconnect())
+                    return
                 if self.path == '/api/check':
                     threading.Thread(target=monitor.probe, daemon=True).start()
+                elif self.path == '/api/phone-check':
+                    self.reply(200,monitor.check_phone())
+                    return
+                elif self.path == '/api/phone-connect':
+                    self.reply(200,monitor.reconnect_phone(body.get('ip'),body.get('port')))
+                    return
                 elif self.path == '/api/test':
                     self.reply(200, monitor.new_challenge())
                     return
@@ -529,6 +605,7 @@ def main():
     token = token_path.read_text().strip()
     assert len(token) >= 32
     threading.Thread(target=monitor.run, daemon=True).start()
+    threading.Thread(target=PublicPresence(ROOT,Archive(ROOT)).run, daemon=True).start()
     public_origin = os.environ.get('QQ_RECOVERY_PUBLIC_ORIGIN', '')
     if public_origin and (urlsplit(public_origin).scheme != 'https' or public_origin != 'https://' + urlsplit(public_origin).netloc):
         raise ValueError('QQ_RECOVERY_PUBLIC_ORIGIN must be an HTTPS origin')
@@ -536,7 +613,9 @@ def main():
     if public_origin:
         public_token = Path(os.environ['QQ_RECOVERY_PUBLIC_PROXY_KEY_FILE']).read_text().strip()
         if len(public_token) < 32:raise ValueError('Invalid public proxy credential')
-    ThreadingHTTPServer(('127.0.0.1', 6190), make_handler(monitor, token, public_origin, public_token)).serve_forever()
+    billing_service=PlatformBilling(ROOT)
+    threading.Thread(target=billing_service.run,daemon=True).start()
+    ThreadingHTTPServer(('127.0.0.1', 6190), make_handler(monitor, token, public_origin, public_token,billing_service)).serve_forever()
 
 
 if __name__ == '__main__':

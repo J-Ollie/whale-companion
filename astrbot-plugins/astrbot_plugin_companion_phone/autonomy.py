@@ -58,6 +58,7 @@ class AutonomousBrowser:
         self.books=None
         self.publisher=None
         self.journal_model=None
+        self.diary_model=None
         self.media=None
         self.share_callback=None
         if self.rhythm:
@@ -263,7 +264,7 @@ class AutonomousBrowser:
                 self.state['last_result']='sleeping' if self.rhythm.state['mode']=='asleep' else 'resting'
             elif activity=='reflect':
                 written=self.rhythm.write_diary(choice.get('diary'),choice.get('source_id'),self.recent())
-                if self.books and self.journal_model: await self.books.reflect(self.journal_model,self.recent())
+                if self.books and self.diary_model: await self.books.reflect(self.diary_model,self.recent())
                 self.state['last_result']='reflected' if written else 'chose_not_to_play'
             self.state['next_check']=self.rhythm.state['next_decision']
             if activity in ('rest','sleep','reflect'):
@@ -441,9 +442,9 @@ class AutonomousBrowser:
             self.continue_allowed(snapshot)
             source=self.recent()[-1]['id']
             await self.share_callback(source,*pending_share)
-        if views and self.books and self.journal_model:
+        if views and self.books and self.diary_model:
             self.continue_allowed(snapshot)
-            await self.books.reflect(self.journal_model,self.recent()[-1:])
+            await self.books.reflect(self.diary_model,self.recent()[-1:])
         if package=='com.tencent.mobileqq' and self.publisher:
             self.continue_allowed(snapshot)
             await self.publisher.consider()

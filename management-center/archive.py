@@ -9,6 +9,7 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from presence import project as public_presence
 
 TZ=ZoneInfo('Asia/Shanghai')
 BASE_TRAITS='有一点嘴硬、懒散和好奇，会吐槽，也会认真。表达自然简短，性格随真实经历慢慢变化。'
@@ -27,6 +28,7 @@ def text(value,limit=240):
 
 class Archive:
     def __init__(self,root):
+        self.root=Path(root)
         self.data=Path(root)/'data/astrbot/plugin_data'
         self.phone=self.data/'companion_phone'
 
@@ -64,6 +66,7 @@ class Archive:
 
     @staticmethod
     def trigger(row):
+        if row.get('trigger')=='tool':return '工具调用（发起场景未记录）'
         if row.get('spontaneous') is True or row.get('trigger') in ('spontaneous','background'):
             return '自主活动'
         if row.get('trigger') in ('owner_requested','manual','requested'):
@@ -120,6 +123,28 @@ class Archive:
             event(autonomy.get('last_checked_at'),'phone_attempt',text(autonomy.get('last_app'),40) or '手机',
                   failure[autonomy['last_result']],title='访问尝试',result='访问未完成',
                   origin=self.trigger({'trigger':autonomy.get('last_trigger')}))
+        path=self.phone/'activity.sqlite3'
+        if path.exists():
+            try:
+                with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=2)) as db:
+                    db.row_factory=sqlite3.Row
+                    receipts=db.execute('SELECT * FROM receipts ORDER BY at DESC LIMIT 1000').fetchall()
+                labels={'space_posts':('reading','QQ空间','空间阅读','读取了自己空间的动态列表'),
+                        'space_comments':('reading','QQ空间','评论阅读','读取了已加载的公开评论'),
+                        'site_visitors':('reading','网站','访客摘要','读取了来访摘要，不等于通过手机访问网站'),
+                        'phone_open':('phone_action','手机','打开应用','已执行打开应用，不等于已经阅读'),
+                        'phone_screen':('phone_action','手机','观察画面','已取得手机画面，未保存截图内容'),
+                        'phone_scroll':('phone_action','手机','翻页操作','已执行滑动，未认定跳过的页面已经读过'),
+                        'phone_input':('phone_action','手机','输入操作','已执行输入，不记录输入内容，也不等于已发送'),
+                        'phone_tap':('phone_action','手机','点按操作','已执行点按，页面结果需另行核验'),
+                        'phone_key':('phone_action','手机','系统按键','已执行系统按键')}
+                for receipt in receipts:
+                    if receipt['action'] not in labels:continue
+                    kind,app,title,note=labels[receipt['action']]
+                    event(receipt['at'],kind,app,note,title=title,result='执行回执已记录',
+                          origin=self.trigger({'trigger':receipt['origin']}),count=receipt['count'],
+                          last_at=number(receipt['last_at']))
+            except sqlite3.Error:pass
         return rows
 
     def snapshot(self,guest=False,day=''):
@@ -142,7 +167,7 @@ class Archive:
         state='unknown' if stale else {'asleep':'asleep','resting':'resting','browsing':'browsing','awake':'idle'}.get(mode,'unknown')
         # Only a confirmed outgoing message timestamp, never message text or a person identifier.
         last_chat=self.last_chat()
-        if last_chat and 0<=now-last_chat<=90:state='chatting';updated=last_chat;stale=False
+        if state not in ('asleep','resting') and last_chat and 0<=now-last_chat<=90:state='chatting';updated=last_chat;stale=False
         labels={'unknown':'状态待更新','asleep':'睡觉中','resting':'休息中','browsing':'玩手机中','idle':'清醒 · 空闲','chatting':'聊天活跃'}
         wake=number(rhythm.get('wake_anchor'))
         wake=int(wake)%1440 if wake is not None else None
@@ -154,9 +179,16 @@ class Archive:
                 'current':{'state':state,'label':labels[state],'updated_at':updated,'stale':stale,
                            'note':'依据最近90秒内已确认的回复记录，不表示持续聊天。' if state=='chatting' else '作息模型记录的角色状态；空闲不等同于无聊。'},
                 'routine':{'wake_time':f'{wake//60:02d}:{wake%60:02d}' if wake is not None else None,
+                           'night_fallback_time':f'{((wake+990)%1440)//60:02d}:{((wake+990)%1440)%60:02d}' if wake is not None else None,
                            'sleep_hours':number(rhythm.get('sleep_hours')),
                            'until':until if state in ('asleep','resting') and until and until>now else None,
-                           'note':'北京时间；起床倾向会随习惯缓慢调整，并非固定闹钟。'}}
+                           'note':'北京时间；不是固定凌晨一点睡。夜间兜底约为起床参考后16.5小时，精力不足或自主选择时可提前休息；睡眠倾向不是强制时刻。'}}
+        presence=public_presence(self.read(self.root/'recovery-data/public-presence.json'),state,
+                                 wake,result['routine']['sleep_hours'],now)
+        result['current'].update(note=presence['quote'],voice_source=presence['source'],
+                                 voice_at=presence['written_at'],is_leave_note=state in ('asleep','resting'))
+        result['routine'].update(periods=presence['periods'],plan_at=presence['written_at'],
+                                 note='北京时间 · 当前偏好，可随状态调整。')
         if guest:return result  # Do not even read activity notes for guests.
         rows=[]
         for row in self.journal(self.phone/'experiences.jsonl'):
@@ -182,6 +214,6 @@ class Archive:
                             'missing_duration':sum(r['duration_seconds'] is None for r in selected),
                             'browse_count':sum(r['kind']=='browse' for r in selected),
                             'qzone_count':sum(r['kind']=='qzone' and r.get('confirmed') is True for r in selected),
-                            'notice':'合并浏览经历、空间发布回执、分享与最近一次未完成的访问尝试。浏览时间为记录完成时间，动态时间为发布尝试时间，异常时间为检查时间；自身回读不代表他人可见。旧记录缺少起止时间或触发来源时如实标注，不补造；浏览源只保留最近100条，异常源仅保留最近一次，不是完整操作日志。'}
+                            'notice':'合并已保存浏览、工具读取/操作回执、空间发布与访问尝试。自动提供上下文和聊天自述不算实际浏览；短时间重复工具读取合并并保留次数。工具操作不等于持续使用，缺失时长不补造；自身回读不代表他人可见。旧版未记录的操作不能凭自述补成事实，异常源只保留最近一次。'}
         result['tendencies']={k:number(rhythm.get(k)) for k in ('energy','curiosity','social')}
         return result
