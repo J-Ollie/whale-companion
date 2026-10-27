@@ -118,7 +118,7 @@ class CompanionMemory(Star):
         remaining=TOOL_BYTES-int(event.get_extra('companion_recall_bytes',0))
         if remaining<200:raise ValueError('本轮回忆文字预算已用完，请依据已取得的资料回答')
         limit=min(TOOL_REPLY_BYTES,remaining)
-        if 'matches' in data:data=pack({'scope':data['scope'],'message':data['message']},[('matches',data['matches'])],limit)
+        if 'matches' in data:data=pack({'scope':data['scope'],'category':data.get('category','all'),'message':data['message']},[('matches',data['matches'])],limit)
         elif 'evidence' in data:
             data=dict(data)
             while size(data)>limit and data['evidence']:data['evidence'].pop()
@@ -165,42 +165,52 @@ class CompanionMemory(Star):
         except Exception:return []
 
     @filter.llm_tool(name='companion_memory_recall')
-    async def tool_recall(self,event:AstrMessageEvent,query:str,start_day:str='',end_day:str='',limit:int=6):
+    async def tool_recall(self,event:AstrMessageEvent,query:str='',start_day:str='',end_day:str='',limit:int=6,category:str='all'):
         '''回忆当前私聊对象本人的长期事实、共同事件及旧对话。想不起时主动查，不把当前会话当全部历史。不能查询其他人的私人资料；不要把无匹配说成从未发生。
 
         Args:
-            query(string): 1至120字的关键词，可换别名再次搜索。
+            query(string): 最多120字的关键词，可换别名；仅facts/plans/events可留空以先翻近期分类目录。
             start_day(string): 可选开始日期，YYYY-MM-DD，北京时间。
             end_day(string): 可选结束日期，YYYY-MM-DD，包含当天。
             limit(number): 返回1至8条，默认6条。
+            category(string): all全部、facts稳定事实、plans计划、events共同事件、conversation对话原话。先查简短目录，再按id读取依据；类别不是联系人或权限。
         '''
         try:
             qq=await self.recall_subject(event);self.recall_budget(event)
             seen=event.get_extra('companion_recall_sent',[])
-            data=self.cognition().search(qq,query,start_day,end_day,limit,exclude=seen)
+            data=self.cognition().search(qq,query,start_day,end_day,limit,exclude=seen,category=category)
             already=False
             if not data['matches'] and seen:
-                already=bool(self.cognition().search(qq,query,start_day,end_day,limit)['matches'])
+                already=bool(self.cognition().search(qq,query,start_day,end_day,limit,category=category)['matches'])
                 if already:data['message']='相关条目本轮已经提供，请使用已有内容；需要更多依据可按编号读取。'
-            if not data['matches'] and not already:
+            if not data['matches'] and not already and query.strip():
                 variants=await self.expand_query(event,query)
-                if variants:data=self.cognition().search(qq,query,start_day,end_day,limit,variants=variants,exclude=seen)
+                if variants:data=self.cognition().search(qq,query,start_day,end_day,limit,variants=variants,exclude=seen,category=category)
             if self.resting():raise ValueError('已进入睡眠休息，醒来后再回忆')
             return CallToolResult(content=[TextContent(type='text',text=self.tool_payload(event,data))])
         except ValueError as exc:return CallToolResult(content=[TextContent(type='text',text=str(exc))],isError=True)
 
     @filter.llm_tool(name='companion_memory_read')
-    async def tool_read(self,event:AstrMessageEvent,identifier:str):
+    async def tool_read(self,event:AstrMessageEvent,identifier:str,offset:int=0,query:str='',context:int=0):
         '''核对回忆搜索返回的记忆及原文依据。范围固定为当前真实私聊对象，不能跨人读取。不读取私密日记或管理员凭据。
 
         Args:
             identifier(string): 回忆搜索实际返回的id，不能传入路径、QQ号或网址。
+            offset(number): 原文字符偏移，首次用搜索返回的offset，续读用next_offset，默认0。
+            query(string): 可选定位词，offset为0时定位到相关原文附近，最多120字。
+            context(number): 0或1；1附上同一联系人前后各一条简短原话，默认0。
         '''
         try:
             qq=await self.recall_subject(event);self.recall_budget(event)
-            if 'read:'+identifier in event.get_extra('companion_recall_sent',[]):data={'id':identifier,'message':'本轮已展开过此条，请使用前面的原文依据'}
-            else:data=self.cognition().read(qq,identifier)
-            return CallToolResult(content=[TextContent(type='text',text=self.tool_payload(event,data))])
+            page=dump([identifier,offset,query,context])
+            pages=event.get_extra('companion_recall_pages',[])
+            if page in pages:data={'id':identifier,'message':'本轮已展开过此页，请使用已有依据或next_offset续读'}
+            else:
+                remaining=TOOL_BYTES-int(event.get_extra('companion_recall_bytes',0))
+                data=self.cognition().read(qq,identifier,offset,query,context,max_bytes=remaining)
+            payload=self.tool_payload(event,data)
+            if 'offset' in data:event.set_extra('companion_recall_pages',pages+[page])
+            return CallToolResult(content=[TextContent(type='text',text=payload)])
         except ValueError as exc:return CallToolResult(content=[TextContent(type='text',text=str(exc))],isError=True)
 
     def allowed(self, event):
@@ -405,6 +415,22 @@ class CompanionMemory(Star):
         rows=self.store.retrieve(self.owner,query,limit=10)
         text='\n'.join(f"{r['id']} · {r['text']}" for r in rows) or '还没有独立的长期记忆。聊到值得记的事，会在回复后整理；也可以 /记住 内容。'
         yield event.plain_result(text)
+        event.stop_event()
+
+    @filter.command('备份记忆')
+    async def backup_memory(self,event:AstrMessageEvent):
+        if not self.allowed(event):return
+        if self.resting():
+            yield event.plain_result('正在睡眠休息，醒来后再进行记忆备份。')
+            event.stop_event();return
+        # Explicit owner command only; never expose this operation as an LLM tool.
+        from .portable import create_archive
+        async with self.processing:
+            destination=self.store.folder/'portable-backups'
+            destination.mkdir(mode=0o700,exist_ok=True)
+            path=await asyncio.to_thread(create_archive,Path(get_astrbot_data_path()),destination)
+        yield event.plain_result('完整记忆备份已校验并保存在服务器私有目录：'+str(path)+
+            '。含私人聊天与日记，不自动发送或公开；恢复须写入新的隔离目录。')
         event.stop_event()
 
     @filter.command('记住')

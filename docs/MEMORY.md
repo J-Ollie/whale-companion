@@ -1,4 +1,6 @@
-# 记忆 v1.3：持久化、有效期与预算
+# 记忆：持久化、有效期与预算
+
+2026-10-25 补充：v1.4 保留本页的上下文与模型调用预算，改进长文本保存、分页原文读取、日期筛选和备份恢复，详见[完整保存与恢复](MEMORY_COMPLETENESS.md)。v1.5 增加[按需分层与分类目录](MEMORY_LAYERS.md)。下文的 v1.3 验证数字是历史记录。
 
 更新：2026-10-25。实现位于 `astrbot-plugins/astrbot_plugin_companion_memory/`。
 

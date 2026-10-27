@@ -5,7 +5,8 @@ import re
 import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
+import os
+from contextlib import contextmanager, closing
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -100,7 +101,8 @@ class MemoryStore:
         return dict(self.db.execute('SELECT * FROM people WHERE qq=?', (qq,)).fetchone())
 
     def observe(self, qq, role, text, *, at=None, origin='', dedupe=None, historical=False):
-        text = clean(text)
+        # Storage is independent of prompt budgets. Keep the complete sanitized text.
+        text = clean(text, None)
         if not text:
             return None
         now = time.time() if at is None and not historical else at
@@ -238,8 +240,15 @@ class MemoryStore:
         readable.chmod(0o600)
 
     def retrieve(self, qq, query, limit=10, now=None):
-        candidates = self.entries(qq, 'fact', now=now)
-        wanted = terms(query)
+        from .recall_index import query_tokens
+        wanted = query_tokens(query)
+        if wanted:
+            candidates=[self.get_entry(qq,hit['ref']) for hit in self.index.search(
+                qq,[query],min(200,max(40,limit*8)),kinds=('fact',),current=True,now=now)]
+            candidates=[row for row in candidates if row]
+        elif not query.strip():
+            candidates=self.entries(qq,'fact',limit=max(limit*4,40),now=now)
+        else:return []
         def score(item):
             return (len(wanted & terms(item['text']+' '+item['topic']))*4 + item['pinned']*2, item['updated'])
         return sorted(candidates,key=score,reverse=True)[:limit]
@@ -359,10 +368,19 @@ class MemoryStore:
         folder = self.folder / 'backups'
         folder.mkdir(exist_ok=True)
         path = folder / (day+'.sqlite3')
-        if not path.exists():
-            with sqlite3.connect(path) as target:
-                self.db.backup(target)
-            path.chmod(0o600)
+        # Refresh at most hourly; an existing daily file is not an end-of-day backup.
+        if not path.exists() or now-path.stat().st_mtime>=3600:
+            temporary=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+            try:
+                with closing(sqlite3.connect(temporary)) as target:
+                    self.db.backup(target)
+                    if target.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
+                        raise ValueError('Memory backup integrity check failed')
+                temporary.chmod(0o600)
+                os.replace(temporary,path)
+                os.utime(path,(now,now))
+            finally:
+                temporary.unlink(missing_ok=True)
         for old in sorted(folder.glob('????-??-??.sqlite3'))[:-7]:
             if old.resolve().parent == folder.resolve():
                 old.unlink()

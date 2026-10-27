@@ -94,7 +94,7 @@ class ChatArchive:
             data = part.get('data') or {}
             if not isinstance(data, dict): continue
             if kind == 'text':
-                segments.append({'type': kind, 'text': str(data.get('text', ''))[:20000]})
+                segments.append({'type': kind, 'text': str(data.get('text', ''))})
             elif kind == 'image':
                 source = str(data.get('url') or data.get('file') or '')
                 segments.append({'type': kind, 'source': source[:12000000]})

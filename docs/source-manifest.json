@@ -51,8 +51,8 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_friends/archive.py",
-    "bytes": 8194,
-    "sha256": "584881166775a1bf78c84e5c903139d78b35cd4075f1706000bf767d9a0199ca"
+    "bytes": 8186,
+    "sha256": "e60483defa7123d5ff4e3e222d1528ede468b560191e99aa3af2b52383fd9e56"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_friends/identity.py",
@@ -91,13 +91,13 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/budget.py",
-    "bytes": 2369,
-    "sha256": "bdccf1865ff27450e88ec3fd51556a2bc704f53cb87a28cfb1d9dfee503e1c43"
+    "bytes": 2949,
+    "sha256": "7f8ecff6f87fbc5458f72f62682644c0861df7c4b40c21a88552b717ef590da5"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/cognition.py",
-    "bytes": 18938,
-    "sha256": "d069017f3c16e093de354fee05a610f4394f66963aa3f7da2552643f4f1186e2"
+    "bytes": 23155,
+    "sha256": "5d4c1dc1264243e1229221b57bb0a79b4340051a41388fdcc4e046bcd8beda09"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/lifecycle.py",
@@ -106,18 +106,23 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/main.py",
-    "bytes": 30901,
-    "sha256": "fe0f3bb1139cb6ef08fbd755e87eb6d0665aa963433adab3175509761e6046e6"
+    "bytes": 32932,
+    "sha256": "7b1e5388e984cb55a514e2fdc696d51e8e4c8370d3bb8506e3507cc075cd68b9"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/memory.py",
-    "bytes": 20809,
-    "sha256": "66400af3a92e87d10e2c46258b61152cbed6a7dc435dba6adfe6e54e94636ac6"
+    "bytes": 21868,
+    "sha256": "dae2e1fbc6009c249c9dd250004379a69a75d7bbda956853d206dc0a7970333f"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/metadata.yaml",
     "bytes": 277,
-    "sha256": "a0e169c71224476c9c5d3c0b2bee53589a6cdc62084ccbc14dc826264fef5886"
+    "sha256": "4430aeb48bc31f853b4d14976860ac2b3ee8d5ea27e0daf2be411e969fd5490e"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/portable.py",
+    "bytes": 13085,
+    "sha256": "a598c5f92691fb147b4fe1d2ef8c0e1db6dd2b36bd438d63dce7f65ba2541288"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/profile.py",
@@ -126,13 +131,18 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/recall_index.py",
-    "bytes": 2269,
-    "sha256": "b0b0d07c169135f443fd12e8bb40ce1182ce6abb4c6bb53868ad1b99df6cad4e"
+    "bytes": 5782,
+    "sha256": "5a740801b36bf8e00642e1c1596a73159dbc455b8795cbe1e5b1a4c465a7fc7b"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/reflection.py",
     "bytes": 2656,
     "sha256": "da823089e9c41fb2ba48dd7eaa5b1132730bbc5b7d0b2454053a86e6653aadf7"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/QZONE_SDK_LICENSE",
+    "bytes": 1079,
+    "sha256": "e7de005a2674b9b3606b2ed2e9d43592164fdfe08de6cae91f2674d4033124eb"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/_conf_schema.json",
@@ -220,11 +230,6 @@
     "sha256": "b7944fd1cbe37b5a96a54764cc1c090c32ca9aefed642497127ae097e1f9349c"
   },
   {
-    "path": "astrbot-plugins/astrbot_plugin_companion_phone/QZONE_SDK_LICENSE",
-    "bytes": 1079,
-    "sha256": "e7de005a2674b9b3606b2ed2e9d43592164fdfe08de6cae91f2674d4033124eb"
-  },
-  {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/rhythm.py",
     "bytes": 16189,
     "sha256": "3d6c8094c57d95317cde5a548c2e2bc585f4ebd660dd178328c931a6f891ffbb"
@@ -233,6 +238,11 @@
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/site_visitors.py",
     "bytes": 5536,
     "sha256": "8107d245c40bb0a6ded5cd7c0054eb73e10d08cb2e5ff5b7658a84c2facd3c52"
+  },
+  {
+    "path": "management-center/THIRD-PARTY-NOTICES.md",
+    "bytes": 2368,
+    "sha256": "456fdc23b21c952b3c1ac9c7e9754322c0f05f45e6ec0643ed6c4d80a73743e4"
   },
   {
     "path": "management-center/archive.py",
@@ -355,24 +365,19 @@
     "sha256": "46e823127f4ffa002456e3ee6cd08572a0b0315e3643c06e551de846558990e4"
   },
   {
-    "path": "management-center/THIRD-PARTY-NOTICES.md",
-    "bytes": 2368,
-    "sha256": "456fdc23b21c952b3c1ac9c7e9754322c0f05f45e6ec0643ed6c4d80a73743e4"
-  },
-  {
     "path": "management-center/visitors.py",
     "bytes": 9228,
     "sha256": "6ccdc3c3eae00f0a432177d3065e6da22a70468f98564b11efb5d8ede2397262"
   },
   {
-    "path": "management-center/web/index.html",
-    "bytes": 25458,
-    "sha256": "5afb88772a6c853f6b5a20c3c536d39af18a3c1701cab7039b027f87b5802370"
-  },
-  {
     "path": "management-center/web/app.js",
     "bytes": 52116,
     "sha256": "02a101248685fb410cbee46703505c7336ee6666902c28bceb0e026e3a779828"
+  },
+  {
+    "path": "management-center/web/index.html",
+    "bytes": 25458,
+    "sha256": "5afb88772a6c853f6b5a20c3c536d39af18a3c1701cab7039b027f87b5802370"
   },
   {
     "path": "management-center/web/style.css",
@@ -438,6 +443,26 @@
     "path": "tests/test_memory.py",
     "bytes": 11409,
     "sha256": "84f7f4915c229bd253c7d47a0c079880af339b65ec914cd5816b31a47722d05c"
+  },
+  {
+    "path": "tests/test_memory_completeness.py",
+    "bytes": 11733,
+    "sha256": "aae4b56204b5e46f4944cc17fe37b6fe0b41c3da4789bc1ee116843fad37c059"
+  },
+  {
+    "path": "tests/test_memory_completeness_hooks.py",
+    "bytes": 4517,
+    "sha256": "6c8fd7223907dc1526644ed480345cddf67798e42c3ed1b07848a257b592da2d"
+  },
+  {
+    "path": "tests/test_memory_layers.py",
+    "bytes": 7757,
+    "sha256": "2dd0978355ae446633fee88a0db3a5217a019e3924e758edafdbf977c6d2ab5b"
+  },
+  {
+    "path": "tests/test_memory_layers_hooks.py",
+    "bytes": 3081,
+    "sha256": "c212c87b273a3658e3bae6a29871a5036d21062edb19fefda42b60ecd076a1a5"
   },
   {
     "path": "tests/test_memory_v3.py",

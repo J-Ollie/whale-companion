@@ -9,6 +9,8 @@ TOOL_BYTES=4200
 TOOL_REPLY_BYTES=1800
 REFLECTION_BYTES=11000
 REFLECTION_OUTPUT_TOKENS=900
+LAYER_BYTES={'personal_core':1200,'relevant_facts':650,'related_episodes':450,
+             'continuity':380,'last_exchange':500,'impressions':400}
 
 
 def dump(value):
@@ -37,6 +39,18 @@ def pack(header,groups,limit):
             if size(data)>limit:data[key].pop();continue
             if identifier:used.add(identifier)
     return data
+
+
+def layer_items(name,items):
+    """A layer cannot consume all other layers' context; the outer cap still wins."""
+    limit=LAYER_BYTES[name];cards=[]
+    for item in items:
+        card=dict(item)
+        if 'text' in card:
+            overhead=size({'items':[{**card,'text':''}]})
+            card['text']=clip(card['text'],max(0,limit-overhead))
+        cards.append(card)
+    return pack({},[('items',cards)],limit)['items']
 
 
 def trim_history(messages,limit=HISTORY_BYTES,max_messages=HISTORY_MESSAGES):
