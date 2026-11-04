@@ -1,5 +1,6 @@
 """Sidecar validity and provenance. Existing memory IDs and raw rows are preserved."""
 import json
+import hashlib
 import re
 import time
 from datetime import datetime,timedelta
@@ -55,11 +56,32 @@ class Lifecycle:
                 PRIMARY KEY(qq,parent,child,relation));
             CREATE TABLE IF NOT EXISTS memory_compendia(qq TEXT,id TEXT,topic TEXT,text TEXT,
                 evidence TEXT,refs TEXT,fingerprint TEXT,updated REAL,PRIMARY KEY(qq,id));
+            CREATE TABLE IF NOT EXISTS memory_entry_provenance(qq TEXT,id TEXT,signature TEXT,PRIMARY KEY(qq,id));
             ''')
         # Metadata only: do not rewrite any existing entry, expiry, quote or ID.
         missing=store.db.execute('SELECT e.* FROM entries e LEFT JOIN memory_state s ON e.qq=s.qq AND e.id=s.id WHERE s.id IS NULL').fetchall()
         with store.atomic():
             for row in missing:self.register(dict(row),legacy=True)
+            for row in store.db.execute('SELECT e.* FROM entries e LEFT JOIN memory_entry_provenance p ON p.qq=e.qq AND p.id=e.id WHERE p.id IS NULL').fetchall():
+                self.capture(dict(row))
+
+    def signature(self,row):
+        try:ids=json.loads(row['evidence'])
+        except (ValueError,TypeError):return None
+        leaves=[]
+        for sid in ids:
+            if type(sid) is not int or sid<=0:return None
+            source=self.store.db.execute('SELECT id,role,text,at,origin FROM observations WHERE qq=? AND id=?',(row['qq'],sid)).fetchone()
+            if not source:return None
+            leaves.append(tuple(source))
+        return hashlib.sha256(json.dumps(leaves,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+
+    def capture(self,row):
+        self.store.db.execute('INSERT OR REPLACE INTO memory_entry_provenance VALUES(?,?,?)',(row['qq'],row['id'],self.signature(row)))
+
+    def provenance_valid(self,row):
+        saved=self.store.db.execute('SELECT signature FROM memory_entry_provenance WHERE qq=? AND id=?',(row['qq'],row['id'])).fetchone()
+        return bool(saved and saved[0] is not None and saved[0]==self.signature(row))
 
     def register(self,row,*,kind=None,at=None,legacy=False):
         return self._register(row,kind=kind,at=at,legacy=legacy)
@@ -85,6 +107,7 @@ class Lifecycle:
              'manual' if row['pinned'] else 'inference' if category_type in ('impression','self_model') else
              'conversation' if category_type in ('episode','working') else 'self_report',
              previous[0]+1 if previous else 1))
+        self.capture(row)
 
     def describe(self,row,now=None):
         now=time.time() if now is None else now
@@ -99,7 +122,7 @@ class Lifecycle:
 
     def current(self,row,now=None):
         state=self.describe(row,now)
-        return state['status']=='active' and not (state['type'] in ('working','impression','state') and state['review_due'])
+        return self.provenance_valid(row) and state['status']=='active' and not (state['type'] in ('working','impression','state') and state['review_due'])
 
     def conflict(self,qq,entry_id,text,ids,now):
         if not self.store.db.execute('SELECT 1 FROM memory_conflicts WHERE qq=? AND entry_id=? AND text=? AND resolved=0',(qq,entry_id,text)).fetchone():
@@ -116,6 +139,10 @@ class Lifecycle:
             if set(json.loads(row['evidence'])) & set(source_ids):
                 self.store.db.execute('DELETE FROM memory_compendia WHERE qq=? AND id=?',(qq,row['id']))
                 self.store.db.execute('DELETE FROM memory_links WHERE qq=? AND parent=?',(qq,row['id']))
+                tables={r[0] for r in self.store.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if 'memory_bundle_state' in tables:self.store.db.execute('DELETE FROM memory_bundle_state WHERE qq=? AND id=?',(qq,row['id']))
+                if 'memory_topics_fts' in tables:self.store.db.execute('DELETE FROM memory_topics_fts WHERE qq=? AND ref=?',(qq,row['id']))
         self.store.db.execute('DELETE FROM memory_links WHERE qq=? AND (parent=? OR child=?)',(qq,entry_id,entry_id))
         self.store.db.execute('DELETE FROM memory_conflicts WHERE qq=? AND entry_id=?',(qq,entry_id))
         self.store.db.execute('DELETE FROM memory_state WHERE qq=? AND id=?',(qq,entry_id))
+        self.store.db.execute('DELETE FROM memory_entry_provenance WHERE qq=? AND id=?',(qq,entry_id))

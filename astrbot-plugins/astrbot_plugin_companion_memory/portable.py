@@ -24,7 +24,8 @@ NATIVE_TABLES={'personas','persona_folders','conversations','platform_message_hi
                'attachments','platform_sessions','umo_aliases'}
 PHONE_FILES={'state.json','autonomy.json','rhythm.json','activity.sqlite3','experiences.jsonl',
              'public-diary.jsonl','private-diary.jsonl','diary-schedule.json','life-diary.jsonl',
-             'qzone-state.json','qzone-publications.jsonl','discussion-state.json','outbound-state.json'}
+             'qzone-state.json','qzone-publications.jsonl','discussion-state.json','outbound-state.json',
+             'exploration.json','public-reading.json','knowledge.sqlite3','public-notes.sqlite3','skills.sqlite3','executor-jobs.sqlite3','executor-status.json'}
 
 
 def digest(path):
@@ -66,19 +67,21 @@ def project_native(source,target,scratch):
 def selected(data):
     plugin=data/'plugin_data'
     for name in ('companion_memory','companion_friends','companion_phone','companion_active',
-                 'companion_visitors','companion_rations'):
+                 'companion_visitors','companion_rations','companion_voice'):
         folder=plugin/name
         if not folder.exists():continue
-        for path in sorted(folder.rglob('*')):
+        paths=folder.iterdir() if name=='companion_voice' else folder.rglob('*')
+        for path in sorted(paths):
             relative=path.relative_to(folder)
             if path.is_symlink():raise ValueError('Symlink in private data is not supported')
             if not path.is_file():continue
             if any(p in ('backups','portable-backups','__pycache__') for p in relative.parts):continue
             if path.name.endswith(('-wal','-shm','-journal','.tmp','.log')):continue
-            if name=='companion_memory' and (len(relative.parts)!=1 or path.name not in ('memory.sqlite3','public-profile.json')):continue
+            if name=='companion_memory' and relative.as_posix() not in ('memory.sqlite3','public-profile.json','usage-audit.sqlite3','usage-enabled.json','shared/shared.sqlite3'):continue
             if name=='companion_friends' and relative.parts[0] not in ('chats.sqlite3','sleep-inbox.sqlite3','requests.json','media'):continue
             if name=='companion_phone' and (len(relative.parts)!=1 or path.name not in PHONE_FILES):continue
-            if name=='companion_active' and path.name!='state.json':continue
+            if name=='companion_voice' and (len(relative.parts)!=1 or path.name not in ('state.json','voice-lab.json','singing-state.json','singing-jobs.sqlite3')):continue
+            if name=='companion_active' and (len(relative.parts)!=1 or path.name not in ('state.json','exploration_outreach.json')):continue
             if name=='companion_visitors' and path.name!='feed.json':continue
             if name=='companion_rations' and path.name!='summary.json':continue
             yield path
@@ -137,7 +140,15 @@ def create_archive(data_root,output):
                 target.parent.mkdir(parents=True,exist_ok=True)
                 database=source.suffix in ('.db','.sqlite','.sqlite3')
                 if source==native:project_native(source,target,work/'native-snapshot.sqlite3')
-                elif database:snapshot(source,target)
+                elif database:
+                    snapshot(source,target)
+                    if relative=='plugin_data/companion_memory/shared/shared.sqlite3':
+                        # These IDs belong to the original native KB instance.
+                        # Preserve records/tombstones/unread/quotas, rebuild only
+                        # derived mappings when restoring into an isolated instance.
+                        with closing(sqlite3.connect(target)) as projected,projected:
+                            projected.execute('DELETE FROM docs')
+                            projected.execute('DELETE FROM kbs')
                 else:copy_stable(source,target)
                 target.chmod(0o600)
                 manifest.append({'path':relative,'bytes':target.stat().st_size,'sha256':digest(target),'sqlite':database})

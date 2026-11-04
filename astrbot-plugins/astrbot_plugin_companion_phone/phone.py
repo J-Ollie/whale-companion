@@ -6,17 +6,20 @@ import os
 import re
 import shlex
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from collections import deque
 from pathlib import Path
 
 from PIL import Image
+from .ui import parse_ui, visible_nodes, consuming_target
+from .executor import ExecutorError
 
 PHONE_IP = '100.64.0.10'
 TOOL_NAMES = ['companion_phone_status', 'companion_phone_screenshot',
               'companion_phone_tap', 'companion_phone_swipe', 'companion_phone_key',
               'companion_phone_open_app', 'companion_phone_type_ascii',
-              'companion_phone_autonomous_browse','companion_chat_media','companion_qzone_publish','companion_qq_space','companion_site_visitors']
+              'companion_phone_autonomous_browse','companion_chat_media','companion_site_visitors']
 
 
 class PhoneError(Exception):
@@ -43,6 +46,7 @@ class Phone:
         self.validate_serial(self.state['serial'])
         self.lock=asyncio.Lock()
         self.screen=None
+        self.ui=None
         self.actions=deque()
         self.last_port_discovery=None
         self._save()
@@ -67,6 +71,13 @@ class Phone:
     def ready(self):
         if self.state['paused']:
             raise PhoneError('手机控制已暂停；请管理员发送 /恢复手机。')
+        executor=getattr(self,'executor',None)
+        if executor and (executor.status.get('paused') is True or executor.paired and not executor.online()):
+            raise PhoneError('手机端已暂停、被使用者接管或连接中断；请在手机端恢复，不自动切换通道重做操作。')
+
+    def native_available(self):
+        executor=getattr(self,'executor',None)
+        return bool(executor and executor.online() and not getattr(self,'legacy_only',False))
 
     async def _run(self, args, timeout=16):
         env=os.environ.copy()
@@ -92,9 +103,17 @@ class Phone:
         return out
 
     async def _shell(self, *args):
+        executor=getattr(self,'executor',None)
+        maintenance=tuple(args[:1]) in (('getprop',),('echo',))
+        if executor and (executor.status.get('paused') is True or executor.paired and not executor.online()) and not maintenance:
+            raise PhoneError('手机端暂停或失联，未通过调试通道继续读屏或操作。')
+        if self.native_available():
+            try:return await self.native.shell(args)
+            except ExecutorError as exc:raise PhoneError('手机端执行未完成：'+str(exc)+'；未切换通道重试。') from None
         return (await self._run(['-s', self.state['serial'], 'shell', shlex.join(str(a) for a in args)])).decode('utf-8',errors='replace').strip()
 
     async def _connect(self):
+        if self.native_available():return
         try:
             try:
                 await self._connect_once()
@@ -189,6 +208,10 @@ class Phone:
 
     async def status(self):
         async with self.lock:
+            executor=getattr(self,'executor',None)
+            if executor and executor.paired:
+                return ('手机端执行器'+('在线' if executor.online() else '暂不可用或已暂停')+'；'
+                    +('安全锁屏，不能操作' if executor.status.get('locked') else '不绕过安全锁屏')+'；无线调试是独立通道。')
             # Status remains available while paused and never resumes actions.
             await self._connect()
             model=await self._shell('getprop','ro.product.model')
@@ -235,23 +258,102 @@ class Phone:
     async def screenshot(self,allowed_packages=None):
         async with self.lock:
             self.ready()
+            self.screen=None
+            self.ui=None
             await self._connect()
             # Invoked only inside an owner-authorized screenshot task. No periodic wakeups.
             await self._wake_for_capture()
             await self._assert_foreground(allowed_packages)
-            png=await self._run(['-s',self.state['serial'],'exec-out','screencap','-p'])
+            native=self.native_available()
+            if native:
+                import base64
+                try:frame=await self.native.rpc('screenshot',{'package':await self.foreground_app()})
+                except ExecutorError as exc:raise PhoneError('手机端截图未完成：'+str(exc)) from None
+                png=base64.b64decode(frame['image'],validate=True)
+            else:png=await self._run(['-s',self.state['serial'],'exec-out','screencap','-p'])
             await self._assert_foreground(allowed_packages)
-            if len(png)>16*1024*1024 or not png.startswith(b'\x89PNG\r\n\x1a\n'):
+            if len(png)>16*1024*1024 or not (png.startswith(b'\x89PNG\r\n\x1a\n') or native and png.startswith(b'\xff\xd8')):
                 raise PhoneError('未取得有效屏幕图片，不应凭猜测操作。')
             with Image.open(io.BytesIO(png)) as img:
                 img.load()
                 w,h=img.size
+                if native:w,h=int(frame['width']),int(frame['height'])
                 self.screen=(w,h,time.monotonic())
                 img=img.convert('RGB')
                 img.thumbnail((900,1800))
                 output=io.BytesIO()
                 img.save(output,format='JPEG',quality=85)
                 return output.getvalue(), (w,h), img.size
+
+    async def _read_ui(self,package):
+        path='/data/local/tmp/companion-ui-'+uuid.uuid4().hex+'.xml'
+        try:
+            await self._shell('uiautomator','dump',path)
+            xml=await self._shell('cat',path)
+            if self.screen is None:
+                raise PhoneError('画面已失效，需要重新观察。')
+            return parse_ui(xml,package,*self.screen[:2])
+        finally:
+            try: await self._shell('rm','-f',path)
+            except PhoneError: pass
+
+    async def ui_observation(self,allowed_packages=None):
+        """Optional node assistance for a fresh screenshot, restricted to its foreground app."""
+        async with self.lock:
+            self.ready()
+            self.ui=None
+            self._point(0,0)
+            package=await self.foreground_app()
+            allowed=frozenset([package]) if allowed_packages is None else allowed_packages
+            await self._assert_foreground(allowed)
+            try:
+                parsed=await self._read_ui(package)
+            except (PhoneError,ValueError,ET.ParseError):
+                await self._assert_foreground(frozenset([package]))
+                return {'available':False,'nodes':[]}
+            await self._assert_foreground(frozenset([package]))
+            self._point(0,0)
+            if not parsed['nodes']:
+                return {'available':False,'nodes':[]}
+            shown,targets=visible_nodes(parsed,uuid.uuid4().hex[:10])
+            self.ui={'package':package,'screen':self.screen,'fingerprint':parsed['fingerprint'],'targets':targets}
+            return {'available':True,'nodes':shown,'fingerprint':parsed['fingerprint']}
+
+    def node_target(self,node_id):
+        self.ready()
+        self._point(0,0)
+        if (not isinstance(node_id,str) or not self.ui or self.screen!=self.ui['screen']
+                or node_id not in self.ui['targets']):
+            raise PhoneError('控件编号不属于当前观察，未执行。请重新截图读取控件。')
+        node=self.ui['targets'][node_id]
+        if not node['enabled'] or not (node['clickable'] or node['editable']):
+            raise PhoneError('该控件不可点击或已停用，未执行。')
+        return dict(node['_attrs'])
+
+    async def tap_node(self,node_id,allowed_packages=None):
+        async with self.lock:
+            if consuming_target(self.node_target(node_id)):
+                raise PhoneError('付款、消费、订阅等控件不在授权范围，未点击。')
+            current=self.ui
+            allowed=frozenset([current['package']])
+            if allowed_packages is not None and current['package'] not in allowed_packages:
+                raise PhoneError('该控件所在应用不在本次授权范围，未执行。')
+            await self._assert_foreground(allowed)
+            try:
+                fresh=await self._read_ui(current['package'])
+            except (PhoneError,ValueError,ET.ParseError) as exc:
+                self.screen=None;self.ui=None
+                raise PhoneError('无法重新核对目标控件，未执行；请重新截图。') from exc
+            await self._assert_foreground(allowed)
+            self._point(0,0)
+            if fresh['fingerprint']!=current['fingerprint']:
+                self.screen=None;self.ui=None
+                raise PhoneError('界面控件已变化，未点击旧目标；请重新截图读取控件。')
+            point=current['targets'][node_id]['_point']
+            self._reserve_action()
+            self.screen=None;self.ui=None
+            await self._shell('input','tap',*point)
+            return '已执行一次核对后的控件点按；请重新观察页面，不能据此声称任务已完成。'
 
     @staticmethod
     def coord(value):
@@ -346,6 +448,7 @@ class Phone:
         if not isinstance(package,str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+',package) or len(package)>180:
             raise PhoneError('应用包名无效。只能提供准确包名，不能输入命令或网址。')
         async with self.lock:
+            self.legacy_only=package=='com.tencent.mobileqq'
             self.ready()
             await self._connect()
             component=await self._shell('cmd','package','resolve-activity','--brief',package)
@@ -385,6 +488,12 @@ class Phone:
             self._reserve_action()
             self.screen=None
             field=await self._input_field()
+            if self.native_available():
+                try:await self.native.rpc('input',{'text':text,'package':await self.foreground_app()})
+                except ExecutorError as exc:raise PhoneError('手机端输入未完成：'+str(exc)+'；不自动重试。') from None
+                after=await self._input_field()
+                if text not in after.get('text',''):raise PhoneError('手机端文字回读未确认；不自动重复输入。')
+                return '文字已输入并回读；未自动发送。'
             bounds=[int(n) for n in re.findall(r'\d+',field.get('bounds',''))]
             if len(bounds)!=4: raise PhoneError('无法定位当前输入框。')
             original=(await self._shell('settings','get','secure','default_input_method')).strip()

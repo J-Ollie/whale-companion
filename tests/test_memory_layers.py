@@ -79,7 +79,7 @@ class LayerTests(unittest.TestCase):
         self.c.consolidate(A)
         self.store.db.execute("UPDATE memory_compendia SET updated=? WHERE topic='南极远征'",(time.time()-86400,));self.store.db.commit()
         found=self.c.related(A,'南极远征')
-        self.assertEqual(found[0]['kind'],'quote_bundle');self.assertIn('冰川',found[0]['text'])
+        self.assertEqual(found[0]['kind'],'scenario_card');self.assertIn('冰川',found[0]['text'])
         self.assertFalse(self.c.related(B,'南极远征'))
 
     def test_unrelated_working_topics_and_impressions_do_not_get_injected(self):

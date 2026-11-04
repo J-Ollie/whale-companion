@@ -13,6 +13,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 from .policy import FriendPolicy
 from .archive import ChatArchive
 from .sleep_inbox import SleepInbox
+from .delivery import VoiceDelivery
 from .social import public_memory,render_public,render_personal
 from astrbot.core.agent.message import TextPart
 
@@ -29,6 +30,7 @@ class CompanionFriends(Star):
         self.umo=f'{self.platform_id}:FriendMessage:{self.owner}'
         self.policy=FriendPolicy(Path(get_astrbot_data_path())/'plugin_data/companion_friends',self.owner,self.call,self.notify)
         self.archive=ChatArchive(self.policy.root)
+        self.voice_delivery=VoiceDelivery()
         self.sleep_inbox=SleepInbox(self.policy.root)
         self.sleep_worker=None
         self.archive_tasks=set()
@@ -146,6 +148,7 @@ class CompanionFriends(Star):
             message.message=parts;message.message_str='\n'.join(texts)
             event=adapter.create_event(message)
             if sender!=self.owner:event.set_extra(VERIFIED,True)
+            event.set_extra('companion_sleep_voice_refs',[item.raw_message for item in converted if isinstance(item.raw_message,dict)])
             event.set_extra('companion_sleep_unread',ids)
             event.set_extra('companion_sleep_message_count',len(ids))
             # Mark before enqueue to avoid replaying an uncertain send after a restart.
@@ -170,10 +173,12 @@ class CompanionFriends(Star):
     @filter.after_message_sent()
     async def unread_answered(self,event):
         if event.get_platform_id()!=self.platform_id:return
+        if event.get_extra('companion_voice_prepared',False) and not event.get_extra('companion_voice_delivery_receipt',None):return
         ids=event.get_extra('companion_sleep_unread',[])
         if ids:self.sleep_inbox.mark(ids,'completed')
 
     async def initialize(self):
+        if not hasattr(self,'voice_delivery'):self.voice_delivery=VoiceDelivery()
         from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_platform_adapter import AiocqhttpAdapter
         from astrbot.core.pipeline.whitelist_check.stage import WhitelistCheckStage
         original=AiocqhttpAdapter.handle_msg
@@ -192,15 +197,21 @@ class CompanionFriends(Star):
         AiocqhttpAdapter.handle_msg=handle
         WhitelistCheckStage.process=check
         async def call_action(bot,action,**params):
-            value=await original_call(bot,action,**params)
             adapter=plugin.context.get_platform_inst(plugin.platform_id)
+            bound=adapter and hasattr(adapter,'get_client') and bot is adapter.get_client()
+            try:value=await original_call(bot,action,**params)
+            except Exception as exc:
+                if bound:plugin.voice_delivery.observe(action,params,error=exc)
+                raise
+            if bound:plugin.voice_delivery.observe(action,params,value=value)
             if adapter and hasattr(adapter,'get_client') and bot is adapter.get_client():
                 private=(action in ('send_private_msg','send_private_forward_msg') or
                          action=='send_msg' and params.get('message_type')=='private')
                 qq=str(params.get('user_id',''))
                 receipt=value.get('data',value) if isinstance(value,dict) else {}
                 if private and qq and qq!=plugin.owner and isinstance(receipt,dict) and receipt.get('message_id'):
-                    plugin.save_chat(qq,'','out',params.get('message') or '[合并转发消息]',receipt['message_id'])
+                    message=plugin.voice_delivery.archived(qq,params.get('message') or '[合并转发消息]')
+                    plugin.save_chat(qq,'','out',message,receipt['message_id'])
             return value
         CQHttp.call_action=call_action
         def restore():

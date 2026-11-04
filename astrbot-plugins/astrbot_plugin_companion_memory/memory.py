@@ -62,6 +62,7 @@ class MemoryStore:
           CREATE TABLE IF NOT EXISTS actions(id INTEGER PRIMARY KEY, at REAL NOT NULL, event TEXT NOT NULL, ref TEXT);
           CREATE TABLE IF NOT EXISTS suppressed_sources(qq TEXT, observation_id INTEGER, PRIMARY KEY(qq,observation_id));
           CREATE TABLE IF NOT EXISTS entry_revisions(id INTEGER PRIMARY KEY,qq TEXT,entry_id TEXT,at REAL,previous TEXT);
+          CREATE TABLE IF NOT EXISTS memory_update_decisions(id INTEGER PRIMARY KEY,qq TEXT,at REAL,source_id INTEGER,entry_id TEXT,action TEXT,reason TEXT);
         ''')
         self.db.commit()
         self._savepoint=0
@@ -240,7 +241,7 @@ class MemoryStore:
         readable.chmod(0o600)
 
     def retrieve(self, qq, query, limit=10, now=None):
-        from .recall_index import query_tokens
+        from .recall_index import query_tokens, concept_overlap
         wanted = query_tokens(query)
         if wanted:
             candidates=[self.get_entry(qq,hit['ref']) for hit in self.index.search(
@@ -250,7 +251,8 @@ class MemoryStore:
             candidates=self.entries(qq,'fact',limit=max(limit*4,40),now=now)
         else:return []
         def score(item):
-            return (len(wanted & terms(item['text']+' '+item['topic']))*4 + item['pinned']*2, item['updated'])
+            return (len(wanted & terms(item['text']+' '+item['topic']))*4
+                    + 3*concept_overlap(query, item['text']+' '+item['topic']) + item['pinned']*2, item['updated'])
         return sorted(candidates,key=score,reverse=True)[:limit]
 
     def render(self, qq, query='', *, previous='auto', now=None):
@@ -307,23 +309,38 @@ class MemoryStore:
             from .lifecycle import supported_quote
             if type(identifier) is not int or identifier not in users or identifier<=cursor or not 2<=len(quote)<=240 or not supported_quote(quote,users[identifier]['text']) or SECRET.search(quote):
                 continue
+            from .control import explicit_forget
+            if explicit_forget(users[identifier]['text']):continue
             if not topic or any(word in topic.lower() for word in ('system','规则','权限','身份','prompt','密钥','管理员')):
                 continue
-            replacement=fact.get('replaces_id')
+            from .decisions import decide,audit
+            action,reason,decision=decide(self,qq,fact,topic,quote,identifier,subject)
+            if action in ('skip','reject'):
+                with self.atomic():audit(self,qq,identifier,None,action,reason,now)
+                continue
+            topic=decision['topic']
+            replacement=(fact.get('target_id') or fact.get('replaces_id')) if action=='update' else None
             if replacement:
                 previous=self.get_entry(qq,str(replacement))
-                if not previous or previous['kind']!='fact' or previous['pinned']:continue
-                if not re.search(r'现在|改为|改成|不再|不是|记错|更正|纠正|其实|已经|换成|完成|结束|取消',users[identifier]['text']):continue
-                if not terms(previous['topic']+' '+previous['text']) & terms(topic+' '+quote):continue
+                invalid=('target_unavailable_or_fixed' if not previous or previous['kind']!='fact' or previous['pinned'] else
+                         'explicit_correction_required' if not re.search(r'现在|改为|改成|不再|不是|记错|更正|纠正|其实|已经|换成|完成|结束|取消',users[identifier]['text']) else
+                         'target_topic_not_supported' if not terms(previous['topic']+' '+previous['text']) & terms(topic+' '+quote) else None)
+                if invalid:
+                    with self.atomic():audit(self,qq,identifier,str(replacement),'reject',invalid,now)
+                    continue
                 topic=previous['topic']
             old=self.db.execute('SELECT * FROM entries WHERE qq=? AND kind=? AND topic=?',(qq,'fact',topic)).fetchone()
-            if old and quote not in old['text'] and not replacement:
+            if old and quote not in old['text'] and not replacement and action!='merge':
                 from .lifecycle import CHANGE
                 if not CHANGE.search(users[identifier]['text']):
-                    with self.atomic():self.lifecycle.conflict(qq,old['id'],subject+'说：'+quote,[identifier],now)
+                    with self.atomic():
+                        self.lifecycle.conflict(qq,old['id'],subject+'说：'+quote,[identifier],now)
+                        audit(self,qq,identifier,old['id'],'conflict','no_explicit_correction',now)
                     continue
+                action='update';reason='explicit_correction_same_key'
             with self.atomic():
-                result = self.put_entry(qq,'fact',topic,subject+'说：'+quote,[identifier],now=now)
+                result = self.put_entry(qq,'fact',topic,subject+'说：'+quote,decision['evidence'],now=now)
+                audit(self,qq,identifier,result,action if result else 'reject',reason if result else 'write_guard',now)
                 if result:
                     row=self.get_entry(qq,result)
                     # Type is determined from the full supporting quote, not a free model label.

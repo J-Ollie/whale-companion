@@ -18,30 +18,42 @@ def main():
     parser.add_argument('--bot-qq', required=True)
     parser.add_argument('--server-ip', required=True)
     parser.add_argument('--phone-ip', required=True)
+    parser.add_argument('--voice-id', help='Instance voice identifier to replace with an example')
+    parser.add_argument('--skip-management-center', action='store_true',
+                        help='Leave the management-center working files untouched')
     args = parser.parse_args()
     source, destination = args.source.resolve(), args.destination.resolve()
     if source == destination or source in destination.parents or destination in source.parents:
         parser.error('Source and destination must be separate, non-nested directories')
     replacements = [(args.owner_qq, '100000001'), (args.bot_qq, '100000002'),
                     (args.server_ip, '203.0.113.10'), (args.phone_ip, '100.64.0.10')]
+    if args.voice_id:
+        replacements.append((args.voice_id, 'voc_example_voice'))
     if any(not old or old == new for old, new in replacements):
         parser.error('Supply actual instance identifiers, not empty/example values')
     selected = []
     for plugin in sorted(source.glob('astrbot_plugin_companion_*')):
         if plugin.is_dir():
-            selected.extend((p, Path('astrbot-plugins') / plugin.name / p.name)
-                            for p in sorted(plugin.iterdir()) if p.is_file()
+            selected.extend((p, Path('astrbot-plugins') / plugin.name / p.relative_to(plugin))
+                            for p in sorted(plugin.rglob('*')) if p.is_file()
+                            and not any(part.startswith('.') or part == '__pycache__'
+                                        for part in p.relative_to(plugin).parts)
                             and (p.suffix in ('.py', '.json', '.yaml') or p.name == 'QZONE_SDK_LICENSE'))
     panel = source / 'qq-recovery'
-    selected.extend((p, Path('management-center') / p.name) for p in sorted(panel.iterdir())
-                    if p.is_file() and (p.suffix == '.py' or p.name == 'THIRD-PARTY-NOTICES.md'))
-    selected.extend((panel / 'web' / name, Path('management-center/web') / name)
-                    for name in ('index.html', 'app.js', 'style.css'))
+    if not args.skip_management_center:
+        selected.extend((p, Path('management-center') / p.name) for p in sorted(panel.iterdir())
+                        if p.is_file() and (p.suffix == '.py' or p.name == 'THIRD-PARTY-NOTICES.md'))
+        selected.extend((panel / 'web' / name, Path('management-center/web') / name)
+                        for name in ('index.html', 'app.js', 'style.css'))
     selected.extend((p, Path('tests') / p.name) for p in sorted(source.glob('test_*.py')))
     forbidden = re.compile(r'(?i)(?:ghp_|github_pat_|sk-)[a-z0-9_-]{20,}|-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----')
+    output = destination / 'docs/source-manifest.json'
     manifest = []
+    if args.skip_management_center and output.exists():
+        previous = json.loads(output.read_text(encoding='utf-8-sig'))
+        manifest.extend(row for row in previous if row['path'].startswith('management-center/'))
     for original, relative in selected:
-        if original.is_symlink():
+        if original.is_symlink() or any(parent.is_symlink() for parent in original.parents if parent != source):
             raise ValueError('Symlink source rejected: ' + str(relative))
         content = original.read_text(encoding='utf-8-sig')
         for old, new in replacements:
@@ -63,8 +75,8 @@ def main():
         target.write_bytes(payload)
         manifest.append({'path': relative.as_posix(), 'bytes': len(payload),
                          'sha256': hashlib.sha256(payload).hexdigest()})
-    output = destination / 'docs/source-manifest.json'
     output.parent.mkdir(parents=True, exist_ok=True)
+    manifest.sort(key=lambda row: row['path'])
     output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f'Exported {len(manifest)} allowlisted source/test files; no runtime data copied')
 

@@ -1,8 +1,18 @@
 {
   "enabled": {"type":"bool","description":"启用记忆与时间上下文","default":true},
+  "affect_enabled": {"type":"bool","description":"启用按联系人隔离、随时间消退的情绪与跨日性格轴","default":true},
+  "affect_daily_calls": {"type":"int","description":"短期情绪评估独立日额度，0停用评估、最多96次；超额沿用状态，原记忆额度不变","default":48},
   "auto_extract": {"type":"bool","description":"清醒时按预算增量整理事实、计划、话题与印象；日记独立处理","default":true},
   "growth_enabled": {"type":"bool","description":"允许基于跨多日互动缓慢形成表达偏好","default":true},
   "owner_qq": {"type":"string","description":"记忆所属主QQ","default":"100000001"},
   "platform_id": {"type":"string","description":"平台ID","default":"qq-companion"},
-  "provider_id": {"type":"string","description":"整理记忆使用的模型","default":"deepseek/deepseek-flash"}
+  "provider_id": {"type":"string","description":"整理记忆使用的模型","default":"deepseek/deepseek-flash"},
+  "semantic_enabled": {"type":"bool","description":"私有Obsidian投影与按联系人隔离的语义候选索引；原始库和原配额不变","default":false},
+  "semantic_embedding_provider": {"type":"string","description":"私有索引使用的AstrBot嵌入提供商ID","default":"whale-memory-embedding-v4"},
+  "semantic_bootstrap_aliyun": {"type":"bool","description":"明确启用后，可复用现有百炼北京生图凭据创建text-embedding-v4提供商；不导出凭据","default":false},
+  "semantic_daily_queries": {"type":"int","description":"新增语义检索每日上限，仍受既有每轮4次回忆及文字预算约束","default":64},
+  "semantic_daily_index_docs": {"type":"int","description":"每日最多向量化的新增/变化文档，失败尝试也计数","default":2048},
+  "semantic_daily_index_chars": {"type":"int","description":"每日向量化文档字符上限；不影响原始记忆保存","default":2000000},
+  "shared_enabled": {"type":"bool","description":"公共资料与当前获准群的独立记忆，不自动公开私聊","default":false},
+  "shared_group_ids": {"type":"list","description":"允许建立群记忆的群号；仍受AstrBot现有白名单与唤醒规则约束","default":[]}
 }

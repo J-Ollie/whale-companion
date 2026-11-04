@@ -19,6 +19,17 @@ def prepare(store,qq,cursor,suffix,now,system):
     facts=facts[:8]
     payload['facts']=[{'id':r['id'],'key':clip(r['topic'],60),'原话':clip(r['text'],210),'pinned':bool(r['pinned'])} for r in facts]
     payload['facts']=pack({},[('facts',payload['facts'])],1800)['facts']
+    topics=[]
+    for hit in store.index.search(qq,[query],12,kinds=('episode',),current=True):
+        row=store.get_entry(qq,hit['ref'])
+        if not row:continue
+        topic=row['text'].split('：',1)[0][:40]
+        if topic not in topics and topic!='共同讨论':topics.append(topic)
+        if len(topics)>=6:break
+    payload['既有事件主题_仅同一对象事项才复用']=topics
+    if store.db.execute("SELECT 1 FROM sqlite_master WHERE name='memory_scenes'").fetchone():
+        rows=store.db.execute("SELECT id,title FROM memory_scenes WHERE qq=? AND status='active' ORDER BY updated DESC LIMIT 4",(qq,))
+        payload['既有场景_仅同一对象事项可关联']=[{'id':r[0],'title':clip(r[1],70)} for r in rows]
     offset=store.get_meta('reflection_offset'+suffix,{'id':None,'offset':0})
     supplied=[];new_cursor=cursor;new_offset={'id':None,'offset':0}
     for row in pending:
@@ -34,11 +45,4 @@ def prepare(store,qq,cursor,suffix,now,system):
             new_offset={'id':row['id'],'offset':start+len(chunk)};break
         new_cursor=row['id']
     if not supplied:return None
-    # A small known earlier user anchor allows slow growth without all recent history.
-    anchors=store.db.execute("SELECT * FROM observations WHERE qq=? AND role='user' AND id<=? AND at IS NOT NULL AND at<? AND at>? ORDER BY id DESC LIMIT 1",(qq,cursor,now-86400,now-14*86400)).fetchall()
-    for raw in anchors:
-        row=dict(raw);item={'id':row['id'],'role':row['role'],'时间':stamp(row['at']),'text':row['text'].encode('utf-8')[:300].decode('utf-8','ignore')}
-        payload['消息'].insert(0,item)
-        if size(system)+size(payload)>REFLECTION_BYTES-100:payload['消息'].pop(0)
-        else:supplied.insert(0,{**row,'text':item['text']})
     return payload,supplied,new_cursor,new_offset

@@ -43,10 +43,15 @@ class ConnectionControl:
             raw=await asyncio.wait_for(reader.readline(),3)
             if len(raw)>1024:raise ValueError()
             data=json.loads(raw)
-            if not isinstance(data,dict) or data.get('action')!='connect':raise ValueError()
-            serial=data.get('serial')
-            if not isinstance(serial,str):raise ValueError()
-            reply=await asyncio.wait_for(self.reconnect(serial),30)
+            if isinstance(data,dict) and data.get('action')=='native_self_test':
+                probe=getattr(self.phone,'executor_self_test',None)
+                if not callable(probe):raise ValueError()
+                reply=await asyncio.wait_for(probe(data.get('nonce')),60)
+            else:
+                if not isinstance(data,dict) or data.get('action')!='connect':raise ValueError()
+                serial=data.get('serial')
+                if not isinstance(serial,str):raise ValueError()
+                reply=await asyncio.wait_for(self.reconnect(serial),30)
         except asyncio.TimeoutError:reply={'ok':False,'code':'timeout'}
         except PhoneError:reply={'ok':False,'code':'connection_failed'}
         except Exception:pass

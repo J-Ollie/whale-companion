@@ -1,0 +1,102 @@
+{
+  "dialogue_low_reasoning": {
+    "type": "bool",
+    "description": "正式私聊回复使用 DeepSeek 低强度思考；后台情绪、收尾等判断保留原模型设置",
+    "default": true
+  },
+  "active_enabled": {
+    "type": "bool",
+    "description": "开启主动聊天",
+    "default": true
+  },
+  "owner_qq": {
+    "type": "string",
+    "description": "管理员 QQ",
+    "default": "100000001"
+  },
+  "platform_id": {
+    "type": "string",
+    "description": "QQ 平台 ID",
+    "default": "qq-companion"
+  },
+  "active_persona_id": {
+    "type": "string",
+    "description": "角色卡",
+    "default": "小鲸鱼"
+  },
+  "active_provider_id": {
+    "type": "string",
+    "description": "模型",
+    "default": "deepseek/deepseek-flash"
+  },
+  "active_daily_limit": {
+    "type": "int",
+    "description": "每日主动次数上限",
+    "default": 4
+  },
+  "active_min_interval_hours": {
+    "type": "float",
+    "description": "距离上次聊天至少几小时",
+    "default": 2.0
+  },
+  "active_start_hour": {
+    "type": "int",
+    "description": "北京时间起始小时",
+    "default": 9
+  },
+  "active_end_hour": {
+    "type": "int",
+    "description": "北京时间截止小时",
+    "default": 23
+  },
+  "batch_enabled": {
+    "type": "bool",
+    "description": "启用连续消息合并",
+    "default": true
+  },
+  "batch_quiet_seconds": {
+    "type": "float",
+    "description": "固定模式的末条等待秒数；自适应模式的末条等待上限",
+    "default": 15.0
+  },
+  "batch_adaptive_pacing": {
+    "type": "bool",
+    "description": "结合当前会话热度、消息边界与既有精力调整合并等待；关闭恢复固定等待",
+    "default": false
+  },
+  "batch_max_seconds": {
+    "type": "float",
+    "description": "一批连续消息最多等待秒数",
+    "default": 60.0
+  },
+  "batch_natural_closure": {
+    "type": "bool",
+    "description": "结合上下文，允许对自然收尾的简短确认不再回复",
+    "default": true
+  },
+  "batch_closure_provider_id": {
+    "type": "string",
+    "description": "收尾判断模型（失败时照常回复）",
+    "default": "deepseek/deepseek-flash"
+  },
+  "bot_qq": {
+    "type": "string",
+    "default": "100000002",
+    "description": "机器人QQ"
+  },
+  "breeze_enabled": {
+    "type": "bool",
+    "description": "启用 Breeze 语音回复",
+    "default": false
+  },
+  "breeze_voice_id": {
+    "type": "string",
+    "description": "BreezeBlue 音色 ID",
+    "default": "voc_example_voice"
+  },
+  "maintenance_mode": {
+    "type": "bool",
+    "default": false,
+    "description": "维护期间暂存私聊，恢复后按原发送者处理"
+  }
+}

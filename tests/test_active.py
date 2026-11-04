@@ -11,13 +11,29 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 sys.path.insert(0, os.environ.get('COMPANION_TEST_PLUGINS','/AstrBot/data/plugins'))
-from astrbot_plugin_companion_active.main import CompanionActive, TZ, apply_control, eligible, parse_decision, send_outreach
+from astrbot_plugin_companion_active.main import CompanionActive, TZ, apply_control, eligible, parse_decision, send_outreach, needs_action_audit, supported_action_claim
 
 NOW = datetime(2026, 10, 20, 15, 0, tzinfo=TZ).timestamp()
 CONFIG = {'enabled': True, 'daily_limit': 4, 'min_interval_hours': 2, 'start_hour': 9, 'end_hour': 23}
 
 
 class LimitTests(unittest.TestCase):
+    def test_action_audit_trigger_covers_varied_tasks(self):
+        for text in ('刚把乐谱又翻了一遍','我正在查资料','已经帮你发出去了','等会提醒你','刚看了一个网页'):
+            self.assertTrue(needs_action_audit(text),text)
+        self.assertFalse(needs_action_audit('那首歌挺好听的，你喜欢哪一段？'))
+
+
+class EvidenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_check_uses_evidence_and_fails_closed(self):
+        context=SimpleNamespace(llm_generate=AsyncMock(return_value=SimpleNamespace(completion_text='{"supported":true}')))
+        self.assertTrue(await supported_action_claim(context,'model','刚看了网页','实际活动：读了网页',{}))
+        self.assertIn('实际活动：读了网页',context.llm_generate.await_args.kwargs['prompt'])
+        context.llm_generate.return_value=SimpleNamespace(completion_text='{"supported":false}')
+        self.assertFalse(await supported_action_claim(context,'model','已经发送了','',{}))
+        context.llm_generate.side_effect=TimeoutError()
+        self.assertFalse(await supported_action_claim(context,'model','还在查','',{}))
+
     def state(self):
         return {'last_user_at': NOW - 8000, 'last_bot_at': NOW - 8000, 'last_sent_at': NOW - 8000}
 

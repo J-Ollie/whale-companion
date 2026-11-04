@@ -30,7 +30,7 @@ def browse_request(text):
     negation_text = text.replace('要不要', '是否要')
     if re.search(r'别|不要|不许|禁止|暂停|不用|不是让你|玩过|玩了吗|浏览了吗|操作手机了吗|打开了吗|访问了吗|为什么|如何|他说|她说|引用|截图里', negation_text):
         return False
-    apps = r'手机|备用机|QQ|酷安|天气|相册|日历|哔哩哔哩|B站|贴吧|Neat Reader|Via|浏览器|网页|网站|https?://'
+    apps = r'手机|备用机|QQ|酷安|天气|相册|日历|哔哩哔哩|B站|抖音|贴吧|Neat Reader|Via|浏览器|网页|网站|https?://'
     explicit=bool(re.search(apps,text,re.I) and re.search(r'打开|访问|进入|刷新|搜索|搜一下|看看|看一下',text))
-    return explicit or bool(re.search(r'玩|逛|浏览', text) and re.search(apps, text, re.I)
+    return explicit or bool(re.search(r'玩|逛|浏览|刷(?!机)', text) and re.search(apps, text, re.I)
                 and re.search(r'现在|试试|去|玩吧|逛吧|浏览一下', text))

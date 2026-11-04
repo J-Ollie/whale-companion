@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_bailian_sing
+display_name: 百炼音色导唱试验
+desc: 使用已确认的百炼说话音频与真实导唱作双参考生成，仅供隔离试听；不保证音色或原曲旋律一致。
+version: v0.1.0
+author: local
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.29,<5"

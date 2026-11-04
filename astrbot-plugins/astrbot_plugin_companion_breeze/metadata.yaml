@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_breeze
+display_name: 小鲸鱼 Breeze 语音桥接
+desc: 结合语境自主选择文字或指定 Breeze TTS 2 声线，尊重联系人偏好、睡眠、配额和发送回执。
+version: v0.2.1
+author: local
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.29,<5"

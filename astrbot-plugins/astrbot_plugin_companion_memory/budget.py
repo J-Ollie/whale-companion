@@ -9,8 +9,8 @@ TOOL_BYTES=4200
 TOOL_REPLY_BYTES=1800
 REFLECTION_BYTES=11000
 REFLECTION_OUTPUT_TOKENS=900
-LAYER_BYTES={'personal_core':1200,'relevant_facts':650,'related_episodes':450,
-             'continuity':380,'last_exchange':500,'impressions':400}
+LAYER_BYTES={'history_gap':1200,'personal_core':1200,'relevant_facts':650,'related_episodes':450,
+             'continuity':380,'last_exchange':500,'impressions':400,'working_handoff':420}
 
 
 def dump(value):

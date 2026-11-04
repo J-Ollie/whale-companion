@@ -8,6 +8,31 @@ QUERY_FILLER=re.compile(r'你还记不记得|还记不记得|你记不记得|记
     r'那件事情|这件事情|那件事|这件事|那个|这个|上次|以前|之前|最近|今天|昨天|前天|请问|告诉我')
 QUERY_STOPWORDS={'什么','我们','你们','他们','一个','一些','事情','时候','内容','对话','一下'}
 
+# Candidate routing only: these concept neighbours never become stored facts.
+CONCEPTS = (('野外', '外业', '进山', '野外调查', '野外采样'),
+            ('设备', '仪器', '采集器'),
+            ('实验记录', '实验日志', '操作记录'),
+            ('定位缺失', '定位丢失', '漏点', '缺测'),
+            ('论文修改', '论文修订', '改论文'),
+            ('提醒', '定时通知', '到点叫'),
+            ('回来', '回来了', '返回'))
+
+
+def concept_overlap(query, text):
+    return sum(any(word in query for word in group) and any(word in text for word in group)
+               for group in CONCEPTS)
+
+
+def weak_recall(query, matches):
+    wanted = query_tokens(query)
+    if not matches:
+        return True
+    if len(wanted) < 4:
+        return False
+    return max((len(wanted & tokens(row.get('text', '')+' '+row.get('topic', '')))
+                + 2*concept_overlap(query, row.get('text', '')+' '+row.get('topic', ''))
+                for row in matches), default=0) <= 1
+
 
 def query_tokens(text):
     return tokens(QUERY_FILLER.sub(' ',str(text))) - QUERY_STOPWORDS
@@ -50,6 +75,12 @@ class RecallIndex:
         for query in queries[:5]:
             for token in sorted(query_tokens(query),key=lambda t:(-len(t),t))[:24]:
                 if token not in wanted:wanted.append(token)
+        for group in CONCEPTS:
+            if any(word in query for query in queries[:5] for word in group):
+                for word in group:
+                    for token in sorted(tokens(word)):
+                        if token not in wanted:
+                            wanted.append(token)
         if not wanted and not browse:return []
         match=' OR '.join('"'+t+'"' for t in wanted[:60])
         where=['memory_fts.qq=?'];args=[qq]

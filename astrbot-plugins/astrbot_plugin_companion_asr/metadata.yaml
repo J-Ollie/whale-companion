@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_asr
+display_name: 小鲸鱼百炼语音识别
+desc: 为现有多模态理解插件提供百炼原生语音识别，不改变 Breeze 语音回复。
+version: v0.1.0
+author: local
+astrbot_version: ">=4.29,<5"
+support_platforms:
+  - aiocqhttp

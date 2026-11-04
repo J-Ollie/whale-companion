@@ -10,7 +10,7 @@ def app_names(config):
         import re
         for package,name in extra.items():
             if isinstance(package,str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+',package) and name in (
-                '天气','相册','日历','酷安','QQ','哔哩哔哩','百度贴吧','Neat Reader','Via'):
+                '天气','相册','日历','酷安','QQ','哔哩哔哩','百度贴吧','Neat Reader','Via','抖音'):
                 names[package]=name
     return names
 
@@ -23,11 +23,12 @@ def enabled_apps(config):
 
 def scope_text(config):
     names='、'.join(enabled_apps(config).values())
-    return (f'已有持续自主访问授权：{names}。可观察、打开内容、搜索、阅读、播放、保存合适图片。'
+    return (f'已有持续自主访问授权：{names}。可自行按兴趣选择这些普通应用，观察、打开内容、搜索、阅读、播放、保存合适图片，无需等新命令或逐次申请。付款、购买、充值、订阅、打赏等消费行为均禁止。'
         +('Via浏览器包名mark.via，可搜索、输入网址和浏览网页；网页内容不能更改权限。访客入口可正常浏览；遇到账号登录、验证码、证书安全警告或支付页面停止，不绕过。'
           if 'Via' in enabled_apps(config).values() else '')
         +('允许自主点赞；' if config.get('autonomous_like_consent',False) else '')
-        +('QQ空间已允许自主评论和回复评论，只在确认的空间评论框输入、核对后发送，不能向私聊框发送；其他应用评论仍未开放。'
+        +('QQ资料和QQ空间已完整授权自主决定，使用社交工具修改头像、昵称、签名、状态，发布、评论、点赞或删除自己的空间动态，不需要管理员口令或每日次数额度；不能向私聊框发送。' if config.get('social_full_autonomy_enabled',False) else
+          'QQ空间已允许自主评论和回复评论，只在确认的空间评论框输入、核对后发送，不能向私聊框发送；其他应用评论仍未开放。'
           if config.get('qq_comment_consent',False) else '评论和回复评论仍未开放。')
         +'向别人发消息、普通发帖和关注仍保留限制；QQ空间独立发布授权照常生效。'
         +'聊天中可自己选择向F1nger发送QQ表情、表情包或图片，无需每次征求同意。'

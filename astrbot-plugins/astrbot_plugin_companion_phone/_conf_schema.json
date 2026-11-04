@@ -1,11 +1,26 @@
 {
+  "native_executor_enabled": {
+    "description": "手机端主动取任务；首次需安装并开启系统读屏权限。已接管后，失联或人为暂停不自动切回调试通道执行",
+    "type": "bool",
+    "default": false
+  },
+  "public_reading_enabled": {
+    "description": "匿名搜索与阅读公开 HTTPS 文本网页，可在手机离线时继续探索；不登录、不评论、不消费",
+    "type": "bool",
+    "default": false
+  },
+  "public_reading_daily_limit": {
+    "description": "后台公开阅读每天最多尝试次数，1至12；与手机、空间及聊天次数独立，仍受原作息决策预算限制",
+    "type": "int",
+    "default": 6
+  },
   "enabled": {
     "description": "启用备用机工具",
     "type": "bool",
     "default": true
   },
   "qq_comment_consent": {
-    "description": "允许在官方QQ空间评论与回复评论，须确认评论框，合计每天10次、至少间隔60秒；不开放其他应用评论",
+    "description": "旧手机空间评论执行器已退役；QQ空间由新插件接管，权限见social_full_autonomy_enabled",
     "type": "bool",
     "default": false
   },
@@ -20,7 +35,7 @@
     "default": 900
   },
   "qzone_enabled": {
-    "description": "持续授权：小号QQ空间自主发布，所有人可见，每天最多5条；可自行搜索公开可用配图",
+    "description": "旧发布器已退役，保留旧配置用于历史审计；新空间功能由QQ空间Ultra接管",
     "type": "bool",
     "default": false
   },
@@ -106,5 +121,35 @@
     "description": "QQ 平台 ID",
     "type": "string",
     "default": "qq-companion"
+  },
+  "social_full_autonomy_enabled": {
+    "description": "完整授权自己的QQ资料和QQ空间：新资料/空间插件直接执行，不需口令，不设每日社交次数上限；保留睡眠、暂停及私密内容保护",
+    "type": "bool",
+    "default": false
+  },
+  "social_autonomy_interval_seconds": {
+    "description": "旧统一周期，仅用于迁移旧调度状态；现用头像昵称、状态、签名和空间各自的周期",
+    "type": "int",
+    "default": 900
+  },
+  "social_identity_interval_seconds": {
+    "description": "头像和昵称：每30天独立考虑一次。只决定是否行动，不强制修改；到期可合并一轮，聊天中的完整自主权限不受此周期限制",
+    "type": "int",
+    "default": 2592000
+  },
+  "social_status_interval_seconds": {
+    "description": "在线状态：每天独立考虑一次。只决定是否行动，不强制修改；到期可合并一轮，聊天中的完整自主权限不受此周期限制",
+    "type": "int",
+    "default": 86400
+  },
+  "social_signature_interval_seconds": {
+    "description": "签名：每7天独立考虑一次。只决定是否行动，不强制修改；到期可合并一轮，聊天中的完整自主权限不受此周期限制",
+    "type": "int",
+    "default": 604800
+  },
+  "social_space_interval_seconds": {
+    "description": "QQ空间：每天独立考虑一次。只决定是否行动，不强制修改；到期可合并一轮，聊天中的完整自主权限不受此周期限制",
+    "type": "int",
+    "default": 86400
   }
 }

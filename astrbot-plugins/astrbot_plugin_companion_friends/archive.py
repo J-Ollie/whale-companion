@@ -37,7 +37,7 @@ class ChatArchive:
         result=[]
         for direction,at,raw in reversed(rows):
             parts=json.loads(raw)
-            text=''.join(p.get('text','') if p.get('type')=='text' else '[非文字消息]' for p in parts)
+            text=''.join(p.get('text','') if p.get('type') in ('text','voice_transcript') else '[非文字消息]' for p in parts)
             result.append({'role':'assistant' if direction=='out' else 'user','at':at,'text':text[:800]})
         return result
 
@@ -93,7 +93,7 @@ class ChatArchive:
             kind = str(part.get('type', 'unknown'))[:30]
             data = part.get('data') or {}
             if not isinstance(data, dict): continue
-            if kind == 'text':
+            if kind == 'text' or kind=='voice_transcript' and direction=='out':
                 segments.append({'type': kind, 'text': str(data.get('text', ''))})
             elif kind == 'image':
                 source = str(data.get('url') or data.get('file') or '')
@@ -105,6 +105,19 @@ class ChatArchive:
             cur = db.execute('INSERT OR IGNORE INTO chats(qq,name,direction,at,message_id,segments) VALUES(?,?,?,?,?,?)',
                 (str(qq), str(name)[:100], direction, at or time.time(), str(message_id or time.time_ns()), json.dumps(segments, ensure_ascii=False)))
             return cur.lastrowid if cur.rowcount else None
+
+    def annotate_voice(self,qq,message_id,text):
+        """Append recognition to the original sender's received record, preserving segments."""
+        if not re.fullmatch(r'\d{5,12}',str(qq)) or not isinstance(text,str) or not 1<=len(text)<=4000:return False
+        from contextlib import closing
+        with closing(self.connect()) as db,db:
+            row=db.execute("SELECT id,segments FROM chats WHERE qq=? AND direction='in' AND message_id=?",(str(qq),str(message_id))).fetchone()
+            if not row:return False
+            parts=json.loads(row[1])
+            if not any(p.get('type')=='record' for p in parts) or any(p.get('type')=='voice_transcript' for p in parts):return False
+            parts.append({'type':'voice_transcript','text':'[语音转写，可能有识别误差] '+text})
+            db.execute('UPDATE chats SET segments=? WHERE id=? AND qq=?',(json.dumps(parts,ensure_ascii=False),row[0],str(qq)))
+        return True
 
     def cache_images(self, identifier):
         if not identifier: return

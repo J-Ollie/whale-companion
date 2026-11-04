@@ -174,6 +174,26 @@ class PortableTests(unittest.TestCase):
         with self.assertRaises(ValueError):restore_archive(tampered,destination)
         self.assertFalse(destination.exists())
 
+    def test_shared_originals_and_forgetting_survive_without_stale_native_ids(self):
+        shared=self.memory/'shared';shared.mkdir()
+        source=shared/'shared.sqlite3'
+        with sqlite3.connect(source) as db:
+            db.executescript("CREATE TABLE records(id TEXT,status TEXT,text TEXT); CREATE TABLE unread(id INTEGER,state TEXT,raw TEXT); CREATE TABLE docs(ref TEXT,doc_id TEXT); CREATE TABLE kbs(scope TEXT,kb_id TEXT); CREATE TABLE quota(day TEXT,count INTEGER);")
+            db.executemany('INSERT INTO records VALUES(?,?,?)',[('a','active','合成群原话'),('b','forgotten','合成遗忘屏蔽')])
+            db.execute("INSERT INTO unread VALUES(1,'pending','synthetic-raw')")
+            db.execute("INSERT INTO docs VALUES('a','old-document')");db.execute("INSERT INTO kbs VALUES('group:synthetic','old-kb')")
+            db.execute("INSERT INTO quota VALUES('synthetic-day',4)")
+        (shared/'credential.json').write_text('NEVER_PACKAGE_THIS')
+        path=create_archive(self.data,self.root/'backups');destination=self.root/'shared-restored';restore_archive(path,destination)
+        target=destination/'data/plugin_data/companion_memory/shared'
+        self.assertFalse((target/'credential.json').exists())
+        with sqlite3.connect(target/'shared.sqlite3') as restored,sqlite3.connect(source) as original:
+            self.assertEqual(restored.execute('SELECT * FROM records').fetchall(),original.execute('SELECT * FROM records').fetchall())
+            self.assertEqual(restored.execute('SELECT * FROM unread').fetchall(),original.execute('SELECT * FROM unread').fetchall())
+            self.assertEqual(restored.execute('SELECT count FROM quota').fetchone()[0],4)
+            self.assertFalse(restored.execute('SELECT 1 FROM docs').fetchone());self.assertFalse(restored.execute('SELECT 1 FROM kbs').fetchone())
+            self.assertTrue(original.execute('SELECT 1 FROM docs').fetchone());self.assertTrue(original.execute('SELECT 1 FROM kbs').fetchone())
+
     def test_traversal_and_extra_entries_are_rejected(self):
         path=create_archive(self.data,self.root/'backups')
         with zipfile.ZipFile(path,'a') as archive:archive.writestr('payload/../../escape',b'bad')

@@ -29,6 +29,11 @@ class CompanionBatch(Star):
         self.pending: dict[str, Batch] = {}
         self.tasks: set[asyncio.Task] = set()
 
+
+
+
+
+
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def merge(self, event: AstrMessageEvent):
         if not self.config.get('enabled', True):
@@ -107,26 +112,44 @@ class CompanionBatch(Star):
             if sender==str(self.config.get('owner_qq','100000001')):
                 meta=lookup('astrbot_plugin_companion_memory') if lookup else None
                 memory=meta.star_cls if meta and meta.activated else None
-                if not memory:return False
+                if not memory:
+                    logger.info('Companion turn-end skipped: owner_context_unavailable')
+                    return False
                 rows=memory.store.latest_messages(sender,limit=16)
             else:
                 if not getattr(event,'get_extra',lambda key,default=False:default)('companion_friend_verified',False):return False
                 meta=lookup('astrbot_plugin_companion_friends') if lookup else None
                 friends=meta.star_cls if meta and meta.activated else None
-                if not friends:return False
+                if not friends:
+                    logger.info('Companion turn-end skipped: friend_context_unavailable')
+                    return False
                 rows=friends.archive.context_messages(sender,limit=16)
             last_bot=next((r for r in reversed(rows) if r['role']=='assistant'),None)
-            if not last_bot or not last_bot.get('at') or not 0<=time.time()-last_bot['at']<=1800:return False
-            if needs_sendoff(event.message_str,last_bot['text']):return False
+            if not last_bot or not last_bot.get('at') or not 0<=time.time()-last_bot['at']<=1800:
+                logger.info('Companion turn-end skipped: missing_or_stale_context')
+                return False
+            if needs_sendoff(event.message_str,last_bot['text']):
+                logger.info('Companion turn-end skipped: first_farewell')
+                return False
             provider=self.config.get('closure_provider_id','deepseek/deepseek-flash')
             payload={'recent':[{'role':r['role'],'text':r['text'][:800]} for r in rows],
                 'current_merged_message':event.message_str,'note':'最新用户消息可能已包含在recent中；这是同一条，不是重复追问。'}
             result=await asyncio.wait_for(self.context.llm_generate(chat_provider_id=provider,
-                system_prompt=SYSTEM,prompt=json.dumps(payload,ensure_ascii=False)),timeout=8)
-            return silence_decision(result.completion_text)
+                system_prompt=SYSTEM,prompt=json.dumps(payload,ensure_ascii=False),
+                max_tokens=96,response_format={'type':'json_object'}),timeout=10)
+            quiet=silence_decision(result.completion_text)
+            logger.info('Companion turn-end checked: %s','closing_ack' if quiet else 'continue_or_uncertain')
+            return quiet
         except Exception as exc:
             logger.warning('Turn-end check unavailable after %s; replying normally',type(exc).__name__)
             return False
+
+    @filter.on_llm_request(priority=-1390000)
+    async def task_truth_hint(self,event,req):
+        if event.get_platform_id()!=self.config.get('platform_id','qq-companion') or getattr(event,'get_group_id',lambda:'')():return
+        req.extra_user_content_parts.append(TextPart(text='所有任务的真实执行规则：先实际调用适用工具完成当前委托，按本轮工具结果或可核对的任务状态说话。聊天中的想法、承诺、旧回复和计划不是执行记录；搜索摘要不等于读过正文，点击或尝试不等于成功，排队不等于完成，发送要以回执为准。未做就说未做，失败或不确定就如实说明，不编造进行中、进展、结果或亲身经历。只有确有持续执行机制和对应有效任务时才能说后台仍在做；没有实际安排或推送机制，不承诺稍后自动继续、提醒或发来。已有可核对的实际活动可自然提及，按证据范围说，不必每次报告工具细节。').mark_as_temp())
+
+
 
     @filter.on_llm_request(priority=-2000000)
     async def sendoff_hint(self,event,req):

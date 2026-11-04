@@ -1,0 +1,8 @@
+name: astrbot_plugin_companion_chat
+display_name: 岚·QQ聊天
+desc: 统一好友审批、睡眠未读、私聊合并、自然收尾、主动私聊与 Breeze 语音；保留独立权限和额度。
+version: v1.5.0
+author: local
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.29,<5"

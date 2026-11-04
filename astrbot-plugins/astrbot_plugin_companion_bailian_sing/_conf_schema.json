@@ -1,0 +1,7 @@
+{
+  "enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "实验开关。默认关闭；本插件只生成试听，不自动发送或替换说话声。"
+  }
+}

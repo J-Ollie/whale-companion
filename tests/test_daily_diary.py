@@ -64,6 +64,24 @@ class DailyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.b.read('public')),2)
         self.assertEqual(self.b.read('public')[0]['text'],'旧随手记')
 
+    async def test_private_blank_needs_no_reason_and_does_not_retry_after_restart(self):
+        self.model.return_value='{"write":false}'
+        await self.b.tick(self.model,now=self.at('23:30'))
+        row=self.b.read('private')[0]
+        self.assertEqual(row['reason_status'],'declined')
+        self.assertEqual(row['text'],'本日未写')
+        self.assertEqual(self.b.daily['decisions']['private:'+self.day]['reason'],'本日未写')
+        b=Books(self.root)
+        await b.tick(self.model,now=self.at('23:59')+120)
+        self.assertEqual(self.model.await_count,2)
+
+    async def test_private_decline_does_not_store_personal_explanation(self):
+        self.model.return_value=json.dumps({'write':False,'reason':'PRIVATE_REASON_SENTINEL'})
+        await self.b.tick(self.model,now=self.at('23:30'))
+        self.assertIn('PRIVATE_REASON_SENTINEL',self.b.read('public')[0]['text'])
+        self.assertEqual(self.b.read('private')[0]['text'],'本日未写')
+        self.assertNotIn('PRIVATE_REASON_SENTINEL',json.dumps(self.b.daily['decisions']['private:'+self.day]))
+
     async def test_no_invented_source_accepted(self):
         self.model.return_value='{"write":true,"text":"随便编一篇","source_ids":["fake"]}'
         await self.b.tick(self.model,now=self.at('23:30'))
@@ -122,6 +140,8 @@ class DailyTests(unittest.IsolatedAsyncioTestCase):
         self.model.side_effect=TimeoutError()
         await self.b.tick(self.model,now=self.at('23:30'))
         self.assertEqual(self.b.read('public')[0]['reason_status'],'retry_pending')
+        self.assertEqual(self.b.read('private')[0]['reason_status'],'retry_pending')
+        self.assertNotEqual(self.b.read('private')[0]['text'],'本日未写')
         self.assertNotIn('public:'+self.day,self.b.daily['processed'])
         self.model.side_effect=None
         await self.b.tick(self.model,now=self.at('23:59')+120)
