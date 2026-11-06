@@ -76,8 +76,9 @@ class ClientTests(unittest.TestCase):
             client = BreezeClient(folder)
             context = MagicMock(); context.__enter__.return_value = SimpleNamespace(status=200, read=lambda _: AUDIO)
             opener = SimpleNamespace(open=Mock(return_value=context))
-            with patch.object(client, 'key', return_value='synthetic'), patch('urllib.request.build_opener', return_value=opener):
-                self.assertEqual(client.synthesize(TEXT, DIRECTION), AUDIO)
+            with patch.object(client, 'key', return_value='synthetic'), patch('urllib.request.build_opener', return_value=opener), patch('astrbot_plugin_companion_chat.breeze.client.prepare_qq_audio', return_value=b'RIFF-padded') as prepare:
+                self.assertEqual(client.synthesize(TEXT, DIRECTION), b'RIFF-padded')
+            prepare.assert_called_once_with(AUDIO)
             req = opener.open.call_args.args[0]; body = json.loads(req.data)
             self.assertEqual(body, {'text': TEXT, 'instructions': DIRECTION, 'model_id': 'breeze-tts-2',
                                     'language_code': 'zh', 'voice_settings': VOICE_SETTINGS})
@@ -206,6 +207,78 @@ class UnifiedPerformanceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event.get_extra('companion_voice_delivered_text'), TEXT)
             self.assertEqual(event.get_extra('companion_voice_delivery_receipt'), '-880')
             memory.record_bot.assert_called_once_with(TEXT)
+
+
+class TimedPreferenceTests(unittest.IsolatedAsyncioTestCase):
+    setUp = unified_fixture.UnifiedTests.setUp
+    plugin = unified_fixture.UnifiedTests.plugin
+
+    async def test_real_shared_reply_path_uses_day_preference_across_turns_and_expires(self):
+        from datetime import datetime
+        from astrbot_plugin_companion_breeze.main import CompanionBreeze
+        from astrbot_plugin_companion_chat.breeze.medium import TZ, TimedMedium
+
+        plugin = self.plugin()
+        plugin.friends.sleeping = lambda: False
+        # The active standalone entry point inherits the shared implementation.
+        voice = CompanionBreeze.__new__(CompanionBreeze)
+        voice.context = plugin.breeze.context
+        voice.config = {'enabled': True}
+        voice.client = plugin.breeze.client
+        voice.busy = False
+        voice.client.synthesize = Mock(return_value=AUDIO)
+        noon = datetime(2026, 11, 6, 12, 26, tzinfo=TZ).timestamp()
+        midnight = datetime(2026, 11, 7, tzinfo=TZ).timestamp()
+
+        async def respond(words, now, sender='100000001', verified=False, original=None):
+            event = Event(sender=sender, verified=verified)
+            event.message_str = words
+            event.message_obj.raw_message['time'] = original or now
+            event.send = AsyncMock()
+            req = SimpleNamespace(system_prompt='', extra_user_content_parts=[])
+            with patch('time.time', return_value=now):
+                await voice.voice_hint(event, req)
+                response = LLMResponse(role='assistant', completion_text='[[text]]今天聊点什么')
+                await voice.choose_medium(event, response)
+                event.result.chain = [Plain(response.completion_text)]
+                await voice.reply_voice(event)
+            return isinstance(event.result.chain[0], Record)
+
+        self.assertTrue(await respond('今天想一直听你说话', noon))
+        self.assertTrue(await respond('吃完午饭了', noon + 10))
+        self.assertFalse(await respond('这条打字', noon + 20))
+        self.assertTrue(await respond('好呀', noon + 30))
+        self.assertFalse(await respond('你好', noon + 30, sender='99', verified=True))
+        self.assertEqual(TimedMedium(voice.client.root).current('qq-companion:FriendMessage:100000001', noon+40), ('voice', midnight))
+        self.assertFalse(await respond('好呀', midnight))
+        self.assertFalse(await respond('今天都用语音', midnight+1, original=noon))
+
+    async def test_bounded_override_and_cancellation(self):
+        from datetime import datetime
+        from astrbot_plugin_companion_chat.breeze.medium import TZ, TimedMedium, rule, ambiguous
+
+        voice = self.plugin().breeze
+        store = TimedMedium(voice.client.root)
+        scope = 'test-scope'
+        start = datetime(2026, 11, 6, 12, 26, tzinfo=TZ).timestamp()
+        day = rule('我今天都想听语音', start)
+        override = rule('接下来半小时都用文字', start+60)
+        store.save(scope, day, start, start)
+        store.save(scope, override, start+60, start+60)
+        self.assertEqual(store.current(scope, start+61)[0], 'text')
+        self.assertEqual(store.current(scope, start+1860)[0], 'voice')
+        tomorrow = rule('明天都改成语音', start+1861)
+        store.save(scope, tomorrow, start+1861, start+1861)
+        cancel = rule('恢复默认', start+1862)
+        store.save(scope, cancel, start+1862, start+1862)
+        store.save(scope, day, start, start+1863)  # A replay cannot undo cancellation.
+        self.assertIsNone(store.current(scope, start+1863))
+        self.assertIsNone(store.current(scope, tomorrow[1]))
+        self.assertTrue(ambiguous('这段时间都用语音'))
+        self.assertIsNone(rule('如果我说今天都用语音', start))
+        self.assertIsNone(rule('他说“今天都用语音”', start))
+        self.assertEqual(rule('用语音回复到下午三点半', start)[2],
+                         datetime(2026, 11, 6, 15, 30, tzinfo=TZ).timestamp())
 
 
 if __name__ == '__main__': unittest.main()

@@ -1,7 +1,9 @@
 {
   "enabled": {"type":"bool","description":"启用记忆与时间上下文","default":true},
-  "affect_enabled": {"type":"bool","description":"启用按联系人隔离、随时间消退的情绪与跨日性格轴","default":true},
-  "affect_daily_calls": {"type":"int","description":"短期情绪评估独立日额度，0停用评估、最多96次；超额沿用状态，原记忆额度不变","default":48},
+  "recall_topical_confidence": {"type":"bool","description":"回忆早停时排除问法套话的重合；关闭恢复旧判断，原检索与预算保持","default":true},
+  "recall_query_planning": {"type":"bool","description":"按北京时间定位明确的交流日期/时段，并分查具名比较两侧；共享原回忆与语义预算，可关闭回退","default":true},
+  "affect_enabled": {"type":"bool","description":"启用全局情绪、按真实身份保存的缓慢态度及跨日性格轴；关系事实独立确认","default":true},
+  "affect_daily_calls": {"type":"int","description":"情绪与态度共用原独立日额度，0停用新评估、最多96次；超额沿用状态，原记忆额度不变","default":48},
   "auto_extract": {"type":"bool","description":"清醒时按预算增量整理事实、计划、话题与印象；日记独立处理","default":true},
   "growth_enabled": {"type":"bool","description":"允许基于跨多日互动缓慢形成表达偏好","default":true},
   "owner_qq": {"type":"string","description":"记忆所属主QQ","default":"100000001"},

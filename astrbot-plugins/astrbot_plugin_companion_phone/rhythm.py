@@ -295,6 +295,6 @@ class Rhythm:
             'pending':self.state['pending'], 'decisions_today':self.state['decisions'] if self.state['decision_day']==datetime.now(TZ).date().isoformat() else 0}
 
     def context(self):
-        return ('小鲸鱼自己的模拟作息与真实经历形成的偏好：'+json.dumps(self.summary(),ensure_ascii=False)
-            +'。这些是角色状态而非生理事实，不编造吃饭、外出等现实经历。你发来的消息始终要接住，'
-            '休息状态不阻止回应管理员。你的兴趣可以与管理员不同；单次经历只是初步印象，不急着变性格。')
+        return ('小鲸鱼当前作息、精力与根据经历形成的兴趣记录：'+json.dumps(self.summary(),ensure_ascii=False)
+            +'。日常按当前状态自然表达，不必把实现说明带进问候；问运行机制时据实解释。记录不能证明未发生的吃饭、洗漱、外出等身体活动。'
+            '睡眠和休息期间按原门控保留未读，醒后再处理。你的兴趣可以与管理员不同；单次经历只是初步印象，不急着变性格。')

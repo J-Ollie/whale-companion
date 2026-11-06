@@ -17,17 +17,29 @@ CONCEPTS = (('野外', '外业', '进山', '野外调查', '野外采样'),
             ('提醒', '定时通知', '到点叫'),
             ('回来', '回来了', '返回'))
 
+# Only assess whether a candidate is sufficient to STOP searching. Search terms,
+# stored originals and the FTS index are unchanged. Shared conversational glue
+# (e.g. "不是/怎么") is not topical evidence for a long paraphrased question.
+CONFIDENCE_FILLER = re.compile(
+    r'是不是|不是|是否|怎么|如何|怎样|什么|多少|哪(?:个|些|种|里|位|几)|'
+    r'[我你他她它]的|自己(?:的)?|我希望|我想|希望|关于|对于|'
+    r'说过|说的|说了|原话|可以|应该|需要|要不要')
+
 
 def concept_overlap(query, text):
     return sum(any(word in query for word in group) and any(word in text for word in group)
                for group in CONCEPTS)
 
 
-def weak_recall(query, matches):
-    wanted = query_tokens(query)
+def weak_recall(query, matches, *, topical=True, named_side=False):
     if not matches:
         return True
-    if len(wanted) < 4:
+    wanted = query_tokens(CONFIDENCE_FILLER.sub(' ', str(query)) if topical else query)
+    if topical and not wanted:
+        return True
+    if len(wanted) < 4 and not (named_side and len(wanted)>=2):
+        # Preserve the existing economical short-keyword/alias path. Longer
+        # questions below still need more than one topical overlapping bigram.
         return False
     return max((len(wanted & tokens(row.get('text', '')+' '+row.get('topic', '')))
                 + 2*concept_overlap(query, row.get('text', '')+' '+row.get('topic', ''))
@@ -104,9 +116,15 @@ class RecallIndex:
         if excluded:where.append('memory_fts.ref NOT IN ('+','.join('?' for _ in excluded)+')');args.extend(excluded)
         if current:
             now=time.time() if now is None else now
+            from .attention import exists,review_after
+            review='s.review_after'
+            if exists(self.store):
+                self.store.db.create_function('companion_review_after',3,
+                    lambda qq,ref,base:review_after(self.store,{'qq':qq,'id':ref},base,now))
+                review="CASE WHEN s.type IN ('working','impression') THEN companion_review_after(e.qq,e.id,s.review_after) ELSE s.review_after END"
             where.append("""(e.expires IS NULL OR e.expires>?) AND COALESCE(s.status,'active')='active'
                 AND (s.valid_to IS NULL OR s.valid_to>?)
-                AND NOT (s.type IN ('working','impression','state') AND s.review_after IS NOT NULL AND s.review_after<=?)
+                AND NOT (s.type IN ('working','impression','state') AND s.review_after IS NOT NULL AND ("""+review+""")<=?)
                 AND NOT EXISTS(SELECT 1 FROM memory_conflicts c WHERE c.qq=e.qq AND c.entry_id=e.id AND c.resolved=0)""")
             args.extend((now,now,now))
         if start is not None or end is not None:
@@ -119,7 +137,7 @@ class RecallIndex:
             if end is not None:where.append('('+at+')<?');args.append(end)
         args.append(min(200,limit))
         rank='0' if browse else 'bm25(memory_fts)'
-        order='e.pinned DESC,e.updated DESC,e.id' if browse else 'rank'
+        order='COALESCE(e.pinned,0) DESC,COALESCE(o.at,e.updated) DESC,memory_fts.ref' if browse else 'rank'
         return [dict(row) for row in self.store.db.execute(
             'SELECT memory_fts.ref,memory_fts.kind,'+rank+' AS rank FROM memory_fts'+joins+
             ' WHERE '+' AND '.join(where)+' ORDER BY '+order+' LIMIT ?',args)]

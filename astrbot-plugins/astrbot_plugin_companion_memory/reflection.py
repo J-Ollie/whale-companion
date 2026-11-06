@@ -3,10 +3,12 @@ from .budget import size,dump,clip,pack,REFLECTION_BYTES
 from .memory import stamp
 
 
-def prepare(store,qq,cursor,suffix,now,system):
+def prepare(store,qq,cursor,suffix,now,system,*,relationship=None):
     pending=store.messages(qq,after=cursor,limit=24)
     if not pending:return None
     payload={'北京时间':stamp(now),'已处理消息截止id':cursor,'成长功能':not bool(suffix),'消息':[]}
+    if relationship is not None:
+        payload['关系评估'] = relationship
     # Relevant existing facts, not fifty arbitrary facts on every background call.
     query=' '.join(r['text'][:80] for r in pending[:3])
     facts=store.retrieve(qq,query,limit=8)
@@ -45,4 +47,9 @@ def prepare(store,qq,cursor,suffix,now,system):
             new_offset={'id':row['id'],'offset':start+len(chunk)};break
         new_cursor=row['id']
     if not supplied:return None
+    clue=store.continuity.references.context(qq,supplied,cursor)
+    if clue:
+        payload['待理解原话_仅用于明确澄清']={'id':clue['id'],'role':'user','时间':stamp(clue['at']),'text':clue['text']}
+        if size(system)+size(payload)<=REFLECTION_BYTES-100:supplied.append(clue)
+        else:payload.pop('待理解原话_仅用于明确澄清')
     return payload,supplied,new_cursor,new_offset

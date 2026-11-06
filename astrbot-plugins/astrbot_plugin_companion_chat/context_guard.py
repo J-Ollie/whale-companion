@@ -7,6 +7,8 @@ Only verified companion requests marked by our request hook use this workaround.
 """
 from functools import wraps
 
+from astrbot.api import logger
+from astrbot.core.agent.context.compressor import TruncateByTurnsCompressor
 from astrbot.core.agent.context.manager import ContextManager
 from astrbot.core.agent.context.round_utils import split_into_rounds
 from astrbot.core.agent.context.truncator import ContextTruncator
@@ -78,7 +80,30 @@ def install():
             # Historical total usage includes old tool schemas/output and is not
             # the size of this request. Recount current messages using the existing
             # framework counter; keep the configured context ceiling unchanged.
-            return await original(self, messages, trusted_token_usage=0)
+            if not isinstance(self.compressor, TruncateByTurnsCompressor):
+                return await original(self, messages, trusted_token_usage=0)
+            result = messages
+            if self.config.enforce_max_turns != -1:
+                result = self.truncator.truncate_by_turns(
+                    result, self.config.enforce_max_turns, self.config.truncate_turns)
+            ceiling = self.config.max_context_tokens
+            if ceiling <= 0:
+                return result
+            tokens = self.token_counter.count_tokens(result)
+            systems, rounds = split(result)
+            dropped = 0
+            # The memory hook already bounds stored history. Drop only whole
+            # oldest rounds that no longer fit, retaining every recent round
+            # that does fit instead of pruning at the framework's soft trigger.
+            while tokens > ceiling and len(rounds) > 1:
+                rounds = rounds[1:]
+                result = recent(self.truncator, systems, rounds, len(rounds))
+                tokens = self.token_counter.count_tokens(result)
+                dropped += 1
+            if dropped or tokens > ceiling:
+                logger.info('Companion context budget: dropped=%s kept=%s tokens=%s ceiling=%s',
+                            dropped, len(rounds), tokens, ceiling)
+            return result
         return wrapped
 
     replace(ContextTruncator, 'truncate_by_dropping_oldest_turns', dropping)

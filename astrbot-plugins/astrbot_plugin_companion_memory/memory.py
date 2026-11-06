@@ -70,6 +70,8 @@ class MemoryStore:
         self.lifecycle=Lifecycle(self)
         from .recall_index import RecallIndex
         self.index=RecallIndex(self)
+        from .continuity import MemoryContinuity
+        self.continuity=MemoryContinuity(self)
         self.path.chmod(0o600)
 
     @contextmanager
@@ -113,7 +115,12 @@ class MemoryStore:
             if result.rowcount and not historical:
                 column = 'last_user' if role == 'user' else 'last_bot'
                 self.db.execute(f'UPDATE people SET {column}=? WHERE qq=?', (now, qq))
-            if result.rowcount:self.index.put(qq,'obs:'+str(result.lastrowid),'observation',text)
+            if result.rowcount:
+                self.index.put(qq,'obs:'+str(result.lastrowid),'observation',text)
+                from .continuity import unresolved
+                from .control import explicit_forget
+                if role=='user' and not historical and unresolved(text) and not explicit_forget(text) and not SECRET.search(text):
+                    self.continuity.clue(qq,result.lastrowid)
         return result.lastrowid if result.rowcount else None
 
     def messages(self, qq, *, after=0, limit=50):
@@ -153,6 +160,7 @@ class MemoryStore:
         if old and old['text'] == text and json.loads(old['evidence'])==evidence and old['expires']==expires:
             return identifier
         with self.atomic():
+            previous_verified=dict(old) if old and self.lifecycle.provenance_valid(old) else None
             if old:
                 self.db.execute('INSERT INTO entry_revisions(qq,entry_id,at,previous) VALUES(?,?,?,?)',
                                 (qq,identifier,now,json.dumps(dict(old),ensure_ascii=False)))
@@ -162,6 +170,7 @@ class MemoryStore:
             self.db.execute('INSERT INTO actions(at,event,ref) VALUES (?,?,?)', (now,'update_'+kind,identifier))
             self.lifecycle.register(dict(self.db.execute('SELECT * FROM entries WHERE qq=? AND id=?',(qq,identifier)).fetchone()))
             self.index.put(qq,identifier,kind,topic+' '+text)
+            self.continuity.capture(self.get_entry(qq,identifier),previous_verified)
         return identifier
 
     def remember(self, qq, text):
@@ -185,6 +194,10 @@ class MemoryStore:
         digest = hashlib.sha256(old['text'].encode()).hexdigest()
         with self.atomic():
             ids=json.loads(old['evidence'])
+            # The same logical memory includes its earlier source assertions.
+            for revision in self.db.execute('SELECT previous FROM entry_revisions WHERE qq=? AND entry_id=?',(qq,identifier)):
+                ids.extend(json.loads(json.loads(revision['previous']).get('evidence','[]')))
+            ids=list(dict.fromkeys(i for i in ids if type(i) is int))
             if ids:
                 duplicates=self.db.execute('SELECT id FROM observations WHERE qq=? AND text IN (SELECT text FROM observations WHERE qq=? AND id IN ('+','.join('?'*len(ids))+'))',(qq,qq,*ids)).fetchall()
                 ids=list(set(ids)|{r[0] for r in duplicates})
@@ -194,6 +207,7 @@ class MemoryStore:
             self.db.execute('INSERT OR IGNORE INTO tombstones VALUES (?,?,?,?)', (qq,old['kind'],old['topic'],digest))
             self.db.execute('DELETE FROM entries WHERE qq=? AND id=?', (qq,identifier))
             self.lifecycle.forget(qq,identifier,ids)
+            self.continuity.forget(qq,identifier,ids)
             self.index.delete(qq,identifier)
             for source_id in ids:self.index.delete(qq,'obs:'+str(source_id))
             self.db.execute('INSERT INTO actions(at,event,ref) VALUES (?,?,?)', (time.time(),'forget',identifier))
@@ -251,8 +265,10 @@ class MemoryStore:
             candidates=self.entries(qq,'fact',limit=max(limit*4,40),now=now)
         else:return []
         def score(item):
-            return (len(wanted & terms(item['text']+' '+item['topic']))*4
-                    + 3*concept_overlap(query, item['text']+' '+item['topic']) + item['pinned']*2, item['updated'])
+            from .attention import boost
+            base=(len(wanted & terms(item['text']+' '+item['topic']))*4
+                    + 3*concept_overlap(query, item['text']+' '+item['topic']) + item['pinned']*2)
+            return (base*(1+boost(self,qq,item['id'],now)), item['updated'])
         return sorted(candidates,key=score,reverse=True)[:limit]
 
     def render(self, qq, query='', *, previous='auto', now=None):
@@ -311,6 +327,12 @@ class MemoryStore:
                 continue
             from .control import explicit_forget
             if explicit_forget(users[identifier]['text']):continue
+            from .continuity import unresolved,future_change
+            from .clarification import clarification
+            if clarification(quote):continue
+            if unresolved(quote):
+                with self.atomic():self.continuity.clue(qq,identifier)
+                continue
             if not topic or any(word in topic.lower() for word in ('system','规则','权限','身份','prompt','密钥','管理员')):
                 continue
             from .decisions import decide,audit
@@ -330,6 +352,12 @@ class MemoryStore:
                     continue
                 topic=previous['topic']
             old=self.db.execute('SELECT * FROM entries WHERE qq=? AND kind=? AND topic=?',(qq,'fact',topic)).fetchone()
+            if old and quote not in old['text'] and future_change(quote):
+                # A future intention cannot replace an existing current fact.
+                with self.atomic():
+                    self.continuity.clue(qq,identifier,'future_change')
+                    audit(self,qq,identifier,old['id'],'skip','future_intention_not_current_fact',now)
+                continue
             if old and quote not in old['text'] and not replacement and action!='merge':
                 from .lifecycle import CHANGE
                 if not CHANGE.search(users[identifier]['text']):
@@ -346,7 +374,8 @@ class MemoryStore:
                     # Type is determined from the full supporting quote, not a free model label.
                     self.lifecycle.resolve(qq,result)
                     status=fact.get('status')
-                    if status in ('completed','cancelled') and re.search(r'完成|结束|取消|不去了|不用再|不要再',quote):
+                    from .continuity import terminal_status
+                    if status in ('completed','cancelled') and terminal_status(quote)==status:
                         self.db.execute('UPDATE memory_state SET status=? WHERE qq=? AND id=?',(status,qq,result))
             added['facts'] += bool(result)
 
@@ -377,6 +406,9 @@ class MemoryStore:
         ids = evidence(diary)
         if ids and diary.get('write') is True and isinstance(diary.get('text'),str) and len(diary['text'])<=300:
             added['diary'] = bool(self.add_diary(qq,diary['text'],diary.get('mood','平常'),ids,now=now))
+        with self.atomic():
+            resolved=self.continuity.references.apply(qq,output.get('clarifications'),users,cursor,now)
+        if resolved:added['clarifications']=resolved
         return added
 
     def backup(self, now=None):

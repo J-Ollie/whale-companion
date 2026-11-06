@@ -56,8 +56,29 @@ class SceneStore:
             member=self.member(qq,ref)
             if not member:return None
             row,state,sources=member
-            members.append([row,state,sources])
+            relations,history=self.transitions(qq,row)
+            members.append([row,state,sources,relations,history] if relations else [row,state,sources])
         return hashof(members) if members else None
+
+    def transitions(self,qq,row):
+        """Existing signed revisions, not inferred links between similar events."""
+        links=[];sources={}
+        for item in self.store.continuity.describe(row,history=True).get('history',[])[:3]:
+            old=item['previous_source_ids'];new=item['current_source_ids']
+            if not old or not new:continue
+            ids=list(dict.fromkeys(old+new));material=[]
+            for sid in ids:
+                source=self.store.db.execute('SELECT id,role,text,at FROM observations WHERE qq=? AND id=?',(qq,sid)).fetchone()
+                if source:material.append(dict(source))
+            if len(material)!=len(ids):continue
+            sources.update({s['id']:s for s in material})
+            correction=item['relation']=='correction'
+            links.append({'id':'obs:'+str(new[-1]),'entry_id':row['id'],'relation':item['relation'],
+                'previous_source_ids':old,'current_source_ids':new,
+                'status':'corrected_assertion' if correction else 'historical_assertion',
+                'text':('旧记法被纠正，不代表过去真实如此：' if correction else '同一条目的历史说法：')+item['previous_text'],
+                'note':'连接只支持原话修订顺序，不证明因果、实际执行或计划已实现'})
+        return links,list(sources.values())
 
     def accept_links(self,qq,proposals,supplied,cursor):
         """Existing/new scene assignment only, anchored to this extraction batch."""
@@ -93,11 +114,14 @@ class SceneStore:
         return accepted
 
     def build(self,qq,title,refs):
-        facts=[];constraints=[];pending=[];changes=[];questions=[];sources={};live=[]
+        facts=[];constraints=[];pending=[];changes=[];questions=[];sources={};live=[];relations=[];direct=set()
         for ref in refs[:32]:
             member=self.member(qq,ref)
             if not member:continue
             row,state,evidence=member;live.append(ref)
+            links,history=self.transitions(qq,row)
+            relations.extend(links)
+            for source in history:sources[source['id']]=source
             item={'id':ref,'text':row['text'],'status':state['status'],'source_kind':state.get('source_kind','unknown'),'source_ids':json.loads(row['evidence'])[:4]}
             current=self.store.lifecycle.current(row) and not (row['expires'] and row['expires']<=time.time())
             if row['kind']=='fact':
@@ -107,22 +131,26 @@ class SceneStore:
                     item['status']='needs_review' if state.get('review_due') else 'awaiting_confirmation';pending.append(item)
                 elif state['status']!='active' or not current:changes.append(item)
             for source in evidence:
+                direct.add(source['id'])
                 sources[source['id']]=source
                 if source['role']=='user' and re.search(r'还没解决|仍不清楚|尚未确定|还没找到',source['text']):
                     questions.append({'id':'obs:'+str(source['id']),'text':clip(source['text'],180),'status':'user_reported_unresolved'})
         timeline=sorted(sources.values(),key=lambda s:(s['at'] or 0,s['id']))
         if len(timeline)>8:timeline=timeline[:2]+timeline[-6:]
         recent=timeline[-1] if timeline else None
-        first=next((s for s in timeline if s['role']=='user'),None)
+        first=next((s for s in timeline if s['role']=='user' and s['id'] in direct),None)
+        corrected={sid for link in relations if link['relation']=='correction' for sid in link['previous_source_ids']}
         summary='围绕“'+title+'”，当前有'+str(len(facts)+len(constraints))+'条有效明确说法、'+str(len(pending))+'项待确认计划，保留'+str(len(changes))+'项历史状态线索。'
         if recent:summary+='最近原话：'+clip(recent['text'],120)
         body={'kind':'scenario_card','topic':title,'summary':summary,
             'background':{'id':'obs:'+str(first['id']),'text':clip(first['text'],240)} if first else None,
             'current_facts':facts[:6],'constraints':constraints[:4],'pending':pending[:4],
             'changes':changes[-4:],'open_questions':questions[-3:],
-            'timeline':[{'id':'obs:'+str(s['id']),'role':s['role'],'time':stamp(s['at']),'text':clip(s['text'],210)} for s in timeline],
+             'timeline':[{'id':'obs:'+str(s['id']),'role':s['role'],'time':stamp(s['at']),
+                 'text':('[已更正的旧记法，不代表过去真实如此] ' if s['id'] in corrected else '')+clip(s['text'],210)} for s in timeline],
             'entry_ids':live,'source_ids':[s['id'] for s in timeline],
             'note':'场景为有来源的结构化工作背景；明确说法仍是本人自述/人工确认，计划与助手原话不证明实际执行；不自动推断人格或对外公开。'}
+        if relations:body['source_relations']=relations[:4]
         return body,live
 
     def refresh(self,qq):
@@ -187,9 +215,11 @@ class SceneStore:
 
     def render(self,card):
         text=card['summary']+'\n\n'+card['note']+'\n'
-        for key,title in [('background','背景'),('current_facts','当前明确说法'),('constraints','明确限制'),('pending','待确认计划'),('changes','历史变化'),('open_questions','待核对问题'),('timeline','原话时间线')]:
+        for key,title in [('background','背景'),('current_facts','当前明确说法'),('constraints','明确限制'),('pending','待确认计划'),('changes','历史变化'),('source_relations','原话修订关系'),('open_questions','待核对问题'),('timeline','原话时间线')]:
             values=card.get(key,[]) or [];values=[values] if isinstance(values,dict) else values
             if not values:continue
             text+='\n## '+title+'\n'
-            for row in values:text+='\n'+row['id']+' · '+str(row.get('status',row.get('time','')))+'\n'+row['text']+'\n'
+            for row in values:
+                text+='\n'+row['id']+' · '+str(row.get('status',row.get('time','')))+'\n'+row['text']+'\n'
+                if key=='source_relations':text+='旧原话 '+','.join('obs:'+str(s) for s in row['previous_source_ids'])+' → 后续原话 '+','.join('obs:'+str(s) for s in row['current_source_ids'])+'；'+row['note']+'\n'
         return text

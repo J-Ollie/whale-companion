@@ -15,6 +15,7 @@ from .archive import ChatArchive
 from .sleep_inbox import SleepInbox
 from .delivery import VoiceDelivery
 from .social import public_memory,render_public,render_personal
+from ..bubbles import observe_delivery as observe_bubble_delivery
 from astrbot.core.agent.message import TextPart
 
 VERIFIED='companion_friend_verified'
@@ -208,9 +209,11 @@ class CompanionFriends:
             if bound and audit:audit.delivery(action,params,attempted=True)
             try:value=await original_call(bot,action,**params)
             except Exception as exc:
+                if bound:observe_bubble_delivery(action,params,error=exc)
                 if bound:plugin.voice_delivery.observe(action,params,error=exc)
                 if bound and audit:audit.delivery(action,params,error=exc)
                 raise
+            if bound:observe_bubble_delivery(action,params,value=value)
             if bound:plugin.voice_delivery.observe(action,params,value=value)
             if bound and audit:audit.delivery(action,params,value=value)
             if adapter and hasattr(adapter,'get_client') and bot is adapter.get_client():

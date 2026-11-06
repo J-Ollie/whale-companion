@@ -137,6 +137,19 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(len(self.reader.state['receipts']),1)
         self.assertEqual(reading.web_source(row),row)
 
+    def test_smaller_prompt_budget_keeps_a_whole_receipt_and_full_archive(self):
+        self.reader.receipt(article(), '第一份真实阅读')
+        other = reading.extract('https://example.org/second', 'text/plain', (TEXT+'不同材料').encode())
+        self.reader.receipt(other, '第二份真实阅读')
+        before = self.reader.path.read_bytes()
+        rows = self.reader.recent()
+        limit = len(json.dumps([rows[-1]], ensure_ascii=False).encode())
+        compact = self.reader.context(limit=limit)
+        selected = json.loads(compact.split('：',1)[1])
+        self.assertEqual(selected, [rows[-1]])
+        self.assertEqual(self.reader.path.read_bytes(), before)
+        self.assertEqual(len(self.reader.recent()), 2)
+
     def test_web_source_continues_existing_phone_goal_and_survives_restart(self):
         book=Exploration(self.tmp.name)
         phone={'id':'phone:one','timestamp':NOW-100,'app':'酷安','note':'公开电池讨论','views':1,'public_content':True}

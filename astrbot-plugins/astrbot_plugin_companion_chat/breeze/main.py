@@ -1,6 +1,10 @@
 """Model-selected QQ voice replies through Breeze, retaining send evidence."""
 import asyncio
 import base64
+import math
+import sqlite3
+import time
+from datetime import datetime
 from pathlib import Path
 
 from astrbot.api import logger
@@ -9,6 +13,7 @@ from astrbot.core.agent.message import TextPart
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .client import BreezeClient, VOICE_ID, preference, suitable
+from .medium import TZ, TimedMedium, ambiguous, direction, rule
 
 from .performance import PERFORMANCE_PROMPT, decode_reply
 
@@ -25,6 +30,7 @@ VOICE_ROUTING = PERFORMANCE_PROMPT
 
 class CompanionBreeze:
     performance_version = "instructions-v1"
+    timed_medium_version = 'windows-v1'
 
     def __init__(self, context, config):
         self.context = context
@@ -63,6 +69,59 @@ class CompanionBreeze:
         event.clear_result()
         event.stop_event()
 
+    def observe_medium(self, event):
+        if event.get_extra('companion_medium_observed', False) or not self.permitted(event):
+            return
+        event.set_extra('companion_medium_observed', True)
+        now = time.time()
+        raw = getattr(getattr(event, 'message_obj', None), 'raw_message', None)
+        originals = event.get_extra('companion_sleep_voice_refs', []) or [raw]
+        for original in originals:
+            if not isinstance(original, dict) or str(original.get('user_id', '')) != str(event.get_sender_id()):
+                continue
+            issued = original.get('time', now)
+            if type(issued) not in (int, float) or not math.isfinite(issued) or not 0 < issued <= now+5:
+                continue
+            parts = original.get('message')
+            if isinstance(parts, list):
+                text = ''.join(str(part['data'].get('text', '')) for part in parts
+                               if isinstance(part, dict) and part.get('type') == 'text' and isinstance(part.get('data'), dict))
+            else:
+                text = parts if isinstance(parts, str) else event.message_str or ''
+            for clause in text.splitlines():
+                parsed = rule(clause, issued)
+                if not parsed:
+                    continue
+                try:
+                    if TimedMedium(self.client.root).save(event.unified_msg_origin, parsed, issued, now):
+                        event.set_extra('companion_medium_change', parsed)
+                except (sqlite3.Error, OSError):
+                    event.set_extra('companion_medium_write_failed', True)
+                    logger.warning('Could not save time-limited reply preference')
+
+    def wanted_medium(self, event):
+        now = time.time()
+        explicit = None
+        for clause in (event.message_str or '').splitlines():
+            parsed = rule(clause, now)
+            if parsed:
+                # Durable directives are evaluated against their original time in storage.
+                explicit = None
+                continue
+            one_turn = clause.strip().removeprefix('这条').removeprefix('这句').removeprefix('这次').removeprefix('本轮')
+            explicit = direction(one_turn) or preference(clause) or explicit
+        if explicit:
+            return explicit
+        root = getattr(self.client, 'root', None)
+        if root is None:
+            return None
+        try:
+            saved = TimedMedium(root).current(event.unified_msg_origin, now)
+        except (sqlite3.Error, OSError):
+            logger.warning('Could not read time-limited reply preference')
+            return None
+        return saved[0] if saved else None
+
     async def voice_hint(self, event, req):
         if not self.permitted(event) or not self.awake():
             return
@@ -74,7 +133,23 @@ class CompanionBreeze:
         if '[companion_voice_performance]' not in req.system_prompt:
             req.system_prompt += '\n\n' + VOICE_ROUTING
         event.set_extra('companion_breeze_route_enabled', True)
-        wanted = preference(event.message_str)
+        self.observe_medium(event)
+        wanted = self.wanted_medium(event)
+        change = event.get_extra('companion_medium_change')
+        if event.get_extra('companion_medium_write_failed'):
+            req.extra_user_content_parts.append(TextPart(text='本次限时媒介偏好未能可靠保存，不能声称已经设置。').mark_as_temp())
+        elif change:
+            medium, starts, expires = change
+            if medium == 'auto':
+                notice = '已恢复自动选择回复方式。'
+            else:
+                label = '语音' if medium == 'voice' else '文字'
+                start = datetime.fromtimestamp(starts, TZ).strftime('%m-%d %H:%M')
+                end = datetime.fromtimestamp(expires, TZ).strftime('%m-%d %H:%M')
+                notice = f'已保存此联系人回复偏好：{label}，北京时间 {start} 至 {end}；适用时按此回复。'
+            req.extra_user_content_parts.append(TextPart(text=notice).mark_as_temp())
+        elif any(ambiguous(clause) for clause in (event.message_str or '').splitlines()):
+            req.extra_user_content_parts.append(TextPart(text='当前消息可能表达了跨轮的回复方式偏好，但期限未明确保存。如果确实要后续持续使用同一种方式，简短问到什么时候；不要自行指定截止时间。').mark_as_temp())
         if wanted == 'voice':
             req.extra_user_content_parts.append(TextPart(text='对方本轮明确想听你的声音。以[[voice]]开头，随后输出JSON，text写自然口语正文、instructions写本句独立的表演方向。text尽量180字以内，不写动作括号。不要把“能发语音”说成“已经发出”，也不要沿用旧对话的“语音发不了、只能文字”。').mark_as_temp())
         elif wanted == 'text':
@@ -118,7 +193,7 @@ class CompanionBreeze:
                 updated.append(part)
         last.content = updated
 
-    def guard_send(self, event, record, text):
+    def guard_send(self, event, record, text, *, fallback_text=None):
         friends = self.friends()
         tracker = getattr(friends, 'voice_delivery', None)
         original = getattr(event, 'send', None)
@@ -154,8 +229,8 @@ class CompanionBreeze:
                         if not self.awake():
                             self.defer(event)
                         raise RuntimeError('breeze_fallback_not_permitted')
-                    state.update(mode='text', rejected=False)
-                    await original(chain.derive([Plain(text)]))
+                    state.update(mode='text', rejected=False, text=fallback_text or text)
+                    await original(chain.derive([Plain(state['text'])]))
                     if not state['confirmed']:
                         raise RuntimeError('breeze_fallback_unconfirmed')
             finally:
@@ -178,7 +253,7 @@ class CompanionBreeze:
                 event.set_extra('companion_breeze_instructions', delivery.instructions)
                 text = delivery.text
                 result.chain = [Plain(text)]
-        wanted = preference(event.message_str)
+        wanted = self.wanted_medium(event)
         if wanted == 'text' or (wanted != 'voice' and event.get_extra('companion_breeze_choice') != 'voice'):
             return
         if event.get_extra('companion_breeze_attempted', False) or self.busy:

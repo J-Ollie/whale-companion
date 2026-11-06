@@ -54,6 +54,43 @@ class RoundGuardTests(unittest.IsolatedAsyncioTestCase):
         result = await self.manager(limit=100).process(messages, trusted_token_usage=15008)
         self.assertEqual(result, [messages[0], messages[-1]])
 
+    async def test_soft_pressure_preserves_adjacent_topic_before_image_acknowledgement(self):
+        image = Message.model_validate({'role':'user','content':[
+            {'type':'text','text':'[图片]'},
+            {'type':'image_url','image_url':{'url':'https://example.invalid/ack.png'}}]})
+        messages = [msg('system', '固定资料'*4000), msg('user', '我准备去考试了'), msg('assistant', '去吧'),
+                    msg('user', '想好名字了吗'), msg('assistant', '还没定下来'),
+                    msg('user', '记得这件事，我等着呢'), msg('assistant', '记得'), image]
+        manager = self.manager()
+        limit = int(manager.token_counter.count_tokens(messages) / .90)
+        manager.config.max_context_tokens = limit
+        result = await manager.process(messages)
+        self.assertEqual(result, messages)
+        self.assertLessEqual(manager.token_counter.count_tokens(result), limit)
+        saved = dump_messages_with_checkpoints(result[1:])
+        self.assertIn('想好名字', str(saved))
+        self.assertIs(result[-1], image)
+
+    async def test_adjacency_floor_does_not_exceed_hard_limit(self):
+        messages = [msg('system','小段说明'), msg('user','旧话'*1000), msg('assistant','旧答'*1000),
+                    msg('user','这一轮要保留')]
+        manager = self.manager(limit=100)
+        result = await manager.process(messages)
+        self.assertEqual(result, [messages[0], messages[-1]])
+
+    async def test_hard_pressure_drops_only_the_rounds_needed_and_keeps_tool_pairs(self):
+        current = [msg('user','本轮问题'),
+                   Message(role='assistant',tool_calls=[{'id':'t','type':'function','function':{'name':'test','arguments':'{}'}}]),
+                   Message(role='tool',tool_call_id='t',content='真实工具结果')]
+        system = msg('system','必要说明')
+        adjacent = [msg('user','紧邻的话'), msg('assistant','紧邻的答复')]
+        messages = [system, msg('user','旧资料'*3000), msg('assistant','旧回复')]+adjacent+current
+        manager = self.manager()
+        manager.config.max_context_tokens = manager.token_counter.count_tokens([system]+adjacent+current)+1
+        result = await manager.process(messages)
+        self.assertEqual(result, [system]+adjacent+current)
+        self.assertLessEqual(manager.token_counter.count_tokens(result), manager.config.max_context_tokens)
+
     async def test_drop_more_rounds_than_available_keeps_current(self):
         messages = self.sample()
         self.assertEqual(ContextTruncator().truncate_by_dropping_oldest_turns(messages, 20), [messages[0], messages[-1]])

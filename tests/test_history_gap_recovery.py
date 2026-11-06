@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock,patch
 sys.path.insert(0,os.environ.get('COMPANION_TEST_PLUGINS',str(Path(__file__).parent)))
 from astrbot_plugin_companion_memory.memory import MemoryStore
 from astrbot_plugin_companion_memory.cognition import Cognition
-from astrbot_plugin_companion_memory.history_gap import recent_gap
+from astrbot_plugin_companion_memory.history_gap import recent_gap, retrieval_query
 from astrbot_plugin_companion_memory.main import CompanionMemory
 from astrbot_plugin_companion_memory.budget import CONTEXT_BYTES,LAYER_BYTES,size
 from astrbot_plugin_companion_memory.usage_audit import context_metadata
@@ -143,6 +143,41 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         data=json.loads(body[body.index('{'):body.rindex('}')+1])
         self.assertTrue(data['last_exchange'])
         self.assertLessEqual(size(body),CONTEXT_BYTES)
+
+    async def test_attachment_query_uses_adjacent_user_topic_and_keeps_current_prompt(self):
+        p = self.plugin()
+        exam = self.add('下午要去考试', age=600)
+        self.store.put_entry(A, 'fact', '行程.考试', '下午要去考试', [exam])
+        name = self.add('你的新名字想好了吗', age=60)
+        naming = self.store.put_entry(A, 'fact', '话题.名字', '讨论你的新名字', [name])
+        history = [{'role':'user','content':'你的新名字想好了吗'}, {'role':'assistant','content':'还没定下来'},
+                   {'role':'user','content':'记得这件事，我等着呢'}, {'role':'assistant','content':'记得'}]
+        event = self.event('')
+        req = ProviderRequest(prompt='[图片]', contexts=history)
+        await p.inject(event, req)
+        body = '\n'.join(part.text for part in req.extra_user_content_parts)
+        self.assertIn(naming, body)
+        self.assertNotIn('下午要去考试', body)
+        self.assertEqual(req.prompt, '[图片]')
+        self.assertEqual(retrieval_query('明确的新问题', history), '明确的新问题')
+
+    async def test_empty_attachment_context_does_not_browse_unrelated_facts_or_plans(self):
+        p = self.plugin()
+        exam = self.add('下午要去考试', age=600)
+        self.store.put_entry(A, 'fact', '行程.考试', '下午要去考试', [exam])
+        body = p.request_context(self.event(''), [])
+        data = json.loads(body[body.index('{'):body.rindex('}')+1])
+        self.assertEqual(data['relevant_facts'], [])
+        self.assertEqual(data['working_handoff'], [])
+
+    async def test_attachment_retrieval_excludes_private_reasoning_media_urls_and_temporary_hints(self):
+        history = [{'role':'assistant','content':'不拿助手旧话当对方查询'},
+                   {'role':'user','content':[{'type':'text','text':'新的称呼'},
+                       {'type':'text','text':'临时内部提示','_no_save':True},
+                       {'type':'think','think':'隐藏推理'},
+                       {'type':'text','text':'[Image 1: original path private.jpg]'},
+                       {'type':'image_url','image_url':{'url':'https://example.invalid/image'}}]}]
+        self.assertEqual(retrieval_query('', history), '新的称呼')
 
 
 if __name__=='__main__':unittest.main()

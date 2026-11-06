@@ -115,6 +115,9 @@ class Lifecycle:
         data=dict(state) if state else {'type':row['kind'],'status':'active','valid_to':row.get('expires')}
         if data['status']=='active' and data.get('valid_to') and now>=data['valid_to']:
             data['status']='past_due' if data['type']=='plan' else 'historical'
+        if data['type'] in ('working','impression') and data.get('review_after'):
+            from .attention import review_after
+            data['review_after']=review_after(self.store,row,data['review_after'],now)
         data['review_due']=bool(data.get('review_after') and now>=data['review_after'])
         if self.store.db.execute('SELECT 1 FROM memory_conflicts WHERE qq=? AND entry_id=? AND resolved=0',
                                  (row['qq'],row['id'])).fetchone():data['status']='conflicted'

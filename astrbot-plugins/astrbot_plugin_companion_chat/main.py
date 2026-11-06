@@ -1,11 +1,15 @@
 """One registered Star, explicit hooks, four private service modules."""
 import asyncio
+import base64
 import json
+from random import choice
+from time import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.message_components import Record
 from astrbot.api.star import Star
 from astrbot.core.agent.tool import ToolSet
 from astrbot.core.provider.register import llm_tools
@@ -21,6 +25,11 @@ from .followup import Followups
 from .context_guard import MARKER, install as install_context_guard
 from .deliberation import REQUEST_MARKER, install as install_deliberation
 from .reply_state import ReplyState, KEY as REPLY_STATE_KEY, LABELS, REASONS
+from . import grounding
+from . import bubbles
+from . import acapella
+from .perception import PerceptionObserver
+from .outcomes import tool_operation
 from .lifecycle import (ComponentContext, SectionConfig, bind_live_consumers, gate_for, outreach_busy,
                         pipeline_tasks, write_status)
 
@@ -35,6 +44,8 @@ class CompanionChat(Star):
         self.gate = None
         self.restore_context_guard = None
         self.restore_deliberation = None
+        self.perceptions = None
+        self.acapella_ready = False
         self.staged = bool(config.get('maintenance_mode', False))
         old = context.get_registered_star('astrbot_plugin_companion_friends')
         self.legacy = old.star_cls if old and old.activated else None
@@ -61,6 +72,8 @@ class CompanionChat(Star):
             self.followups = Followups(self.friends)
             self.batch.followups = self.followups
             self.reply_state = ReplyState(self.friends.policy.root.parent/'companion_chat')
+            self.acapella_root = self.friends.policy.root.parent/'companion_chat/rvc-acapella-v1'
+            self.acapella_history = self.acapella_root.parent/'rvc-last-played.json'
             self.batch.reply_state = self.friends.reply_state = self.reply_state
 
     def external_breeze(self):
@@ -99,6 +112,19 @@ class CompanionChat(Star):
             self.restore_context_guard = install_context_guard()
             self.restore_deliberation = install_deliberation()
             self.ready = True
+            try:
+                for title in acapella.CLIPS:
+                    acapella.read_clip(self.acapella_root, title)
+                self.acapella_ready = True
+            except (OSError, ValueError):
+                self.acapella_ready = False
+            try:
+                self.perceptions = PerceptionObserver(self)
+                self.perceptions.refresh()
+            except Exception as exc:
+                if self.perceptions:self.perceptions.close()
+                self.perceptions=None
+                logger.warning('Perception metadata unavailable after %s',type(exc).__name__)
             bind_live_consumers(self.context)
             self.gate.holding = False
         self.monitor = asyncio.create_task(self.monitor_status(), name='companion-chat-status')
@@ -110,11 +136,20 @@ class CompanionChat(Star):
         write_status({'ready': self.ready, 'holding': self.gate.holding,
                       'pipelines': len(tasks), 'outreach_busy': outreach_busy(self.active),
                       'voice_busy': self.voice_busy(),
+                      'rvc_acapella': self.acapella_ready,
+                      'rvc_acapella_conversational': self.acapella_ready and any(
+                          t.name == acapella.TOOL and getattr(t, 'active', True) for t in llm_tools.func_list),
                       'batch_pending': len(self.batch.pending) if self.batch else 0,
                       'context_round_guard': self.restore_context_guard is not None,
                       'dialogue_low_reasoning': bool(self.restore_deliberation and self.config.get('dialogue_low_reasoning', True)),
                       'reply_state_tracking': getattr(self, 'reply_state', None) is not None,
-                      'voice_performance': getattr(self.breeze, 'performance_version', None)})
+                       'perception_tracking': bool(getattr(self,'perceptions',None) and self.perceptions.active),
+                       'perception_bindings': len(self.perceptions.bindings) if getattr(self,'perceptions',None) else 0,
+                      'voice_performance': getattr(self.breeze, 'performance_version', None),
+                      'timed_medium': getattr(self.external_breeze() or self.breeze, 'timed_medium_version', None),
+                      'commitment_execution': 'message-ledger-v1',
+                      'active_awake_anytime': bool(self.config.get('active_awake_anytime', False)),
+                      'outreach_medium': 'voice', 'truth_guard': 'evidence-v1'})
 
     async def monitor_status(self):
         while True:
@@ -157,6 +192,9 @@ class CompanionChat(Star):
         if self.restore_context_guard:
             self.restore_context_guard()
             self.restore_context_guard = None
+        if getattr(self,'perceptions',None):
+            self.perceptions.close()
+            self.perceptions=None
         if self.restore_deliberation:
             self.restore_deliberation()
             self.restore_deliberation = None
@@ -185,6 +223,10 @@ class CompanionChat(Star):
     async def observe(self, event):
         if self.ready:
             if self.batch.allowed(event):
+                voice = self.external_breeze() or self.breeze
+                observe_medium = getattr(voice, 'observe_medium', None)
+                if observe_medium:
+                    observe_medium(event)
                 event.set_extra('companion_pipeline_task', asyncio.current_task())
                 if not (event.message_str or '').lstrip().startswith('/') and getattr(self, 'reply_state', None):
                     self.reply_state.begin(event, asyncio.current_task())
@@ -193,6 +235,7 @@ class CompanionChat(Star):
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE, priority=400)
     async def prepare_material(self, event):
         if self.ready and self.batch.allowed(event) and not self.friends.sleeping():
+            if getattr(self,'perceptions',None):self.perceptions.refresh()
             if not (event.message_str or '').lstrip().startswith('/'):
                 await self.materials.prepare(event)
 
@@ -213,16 +256,28 @@ class CompanionChat(Star):
         if self.ready:
             await self.friends.unread_hint(event, req)
             await self.active.exploration_feedback(event, req)
+            if (getattr(self.active,'state',{}).get('contact_policy_v1')
+                    and event.unified_msg_origin == getattr(self.active,'umo',None)):
+                import time
+                req.extra_user_content_parts.append(TextPart(text='当前已保存的联系约定，作为本轮事实依据；普通来信可以回复，不能因情绪改写约定或承诺越过限制：\n'
+                    +json.dumps(self.active.contact_context(time.time()),ensure_ascii=False)).mark_as_temp())
 
     @filter.on_llm_request(priority=-1000000)
     async def isolate_tools(self, event, req):
         if self.ready:
             await self.friends.isolate_tools(event, req)
+            if req.func_tool and any(t.name == acapella.TOOL for t in req.func_tool.tools):
+                req.func_tool = ToolSet([t for t in req.func_tool.tools if t.name != acapella.TOOL])
             if self.batch.allowed(event) and not self.friends.sleeping():
                 tools = list(req.func_tool.tools) if req.func_tool else []
                 req.func_tool = ToolSet(tools)
+                can_sing = self.acapella_tool_transport(event) is not None
                 for tool in llm_tools.func_list:
-                    if tool.name == 'companion_wait_for_followup' and getattr(tool, 'active', True):
+                    owner_status=(tool.name=='companion_self_status'
+                        and event.unified_msg_origin==self.active.umo
+                        and str(event.get_sender_id())==self.friends.owner and not event.get_group_id())
+                    if (tool.name == 'companion_wait_for_followup' or owner_status
+                            or can_sing and tool.name == acapella.TOOL) and getattr(tool, 'active', True):
                         req.func_tool.add_tool(tool)
 
     @filter.on_llm_request(priority=-1390000)
@@ -245,6 +300,83 @@ class CompanionChat(Star):
                     '不选静默时仍按正常文字或语音格式回复，不能用空正文表示静默。').mark_as_temp())
             if self.batch.allowed(event) and not self.friends.sleeping():
                 self.materials.inject(event, req)
+                if (not (event.message_str or '').lstrip().startswith('/')
+                        and getattr(event, 'unified_msg_origin', None) == getattr(getattr(self, 'active', None), 'umo', '_')
+                        and str(event.get_sender_id()) == self.friends.owner and not event.get_group_id()):
+                    await grounding.inject(self.active, event, req)
+
+    @filter.on_llm_tool_respond()
+    async def collect_grounding_tools(self, event, tool, tool_args, tool_result):
+        if (not self.ready or event.unified_msg_origin != self.active.umo
+                or str(event.get_sender_id()) != self.friends.owner or event.get_group_id()):
+            return
+        rows = event.get_extra('companion_grounding_tools', [])
+        # Keep request-local evidence only; never persist credentials/tool bodies.
+        value = '\n'.join(getattr(part, 'text', '') for part in getattr(tool_result, 'content', []) or [])
+        rows.append({'tool': str(getattr(tool, 'name', '')), 'is_error': bool(getattr(tool_result, 'isError', False)), 'result': grounding.clean_evidence(value)[:2400]})
+        event.set_extra('companion_grounding_tools', rows[-6:])
+        operation=tool_operation(str(getattr(tool,'name','')),tool_args)
+        if operation and hasattr(self.active,'operational_outcome'):
+            failed=bool(getattr(tool_result,'isError',False));uncertain=False;confirmed=False
+            try:
+                payload=json.loads(value)
+                if isinstance(payload,dict):
+                    failed=failed or payload.get('status') in ('failed','error','unavailable','not_available')
+                    uncertain=payload.get('status')=='uncertain'
+                    confirmed=payload.get('status') in ('ok','success','read','sent','submitted') or payload.get('result') in ('read','sent','submitted')
+                    confirmed=confirmed or payload.get('action')=='read' and isinstance(payload.get('data'),dict) and payload['data'].get('material')=='web_text'
+            except (ValueError,TypeError):pass
+            if value.startswith('手机工具异常，操作结果未确认。'):uncertain=True
+            count=int(event.get_extra('companion_outcome_tool_calls',0))+1
+            event.set_extra('companion_outcome_tool_calls',count)
+            source='tool:'+str(getattr(getattr(event,'message_obj',None),'message_id',''))+':'+str(count)+':'+str(getattr(tool,'name',''))
+            if failed or uncertain:
+                self.active.operational_outcome(*operation,'delivery_uncertain' if uncertain else 'tool_uncompleted',source=source)
+            elif confirmed:
+                self.active.operational_outcome(*operation,'',recovery='later_same_kind_succeeded')
+
+    @filter.on_llm_response(priority=4000000)
+    async def check_grounded_reply(self, event, response):
+        if (self.ready and event.unified_msg_origin == self.active.umo
+                and str(event.get_sender_id()) == self.friends.owner and not event.get_group_id()
+                and not self.friends.sleeping()):
+            await grounding.audit(self.active, event, response)
+
+    @filter.llm_tool(name='companion_self_status')
+    async def self_status(self,event:AstrMessageEvent,section:str='outreach',day:str=''):
+        '''只读自己的执行、材料处理记录或最新余额摘要，仅限当前管理员私聊，每轮最多3次。不访问原始日志或任意路径。
+
+        Args:
+            section(string): outreach 查询主动联系各阶段；balance 重读当前余额、今日费用与查询时间；outcomes 查看近期受阻和恢复经历；perception 查看启用后近期材料处理元数据，不代表直接视觉或主观听感。
+            day(string): outreach 可选北京时间YYYY-MM-DD，仅最近7个自然日；留空为今天。balance留空。
+        '''
+        def reply(value,error=False):
+            return CallToolResult(content=[TextContent(type='text',text=json.dumps(value,ensure_ascii=False))],isError=error)
+        if (not self.ready or event.unified_msg_origin!=self.active.umo
+                or str(event.get_sender_id())!=self.friends.owner or event.get_group_id()
+                or self.friends.sleeping()):
+            return reply({'status':'denied','notice':'只在清醒时向当前管理员本人提供自己的执行摘要。'},True)
+        calls=int(event.get_extra('companion_self_status_calls',0))
+        if calls>=3:
+            return reply({'status':'turn_limit','notice':'本轮已查询3次，按已有记录回答，未知的部分保留未知。'},True)
+        event.set_extra('companion_self_status_calls',calls+1)
+        if section=='outreach':
+            return reply(self.active.outreach_evidence(day))
+        if section=='outcomes' and not day:
+            return reply({'own_outcomes':self.active.outcome_context()})
+        if section=='perception' and not day:
+            observer=getattr(self,'perceptions',None)
+            return reply(observer.recent(event.unified_msg_origin) if observer else {'status':'unavailable','events':[]})
+        if section=='balance' and not day:
+            meta=self.context.get_registered_star('astrbot_plugin_companion_phone')
+            phone=meta.star_cls if meta and meta.activated else None
+            reader=getattr(phone,'rations',None)
+            if reader is not None and phone.config.get('enabled',True) and self.active.awake(phone):
+                snapshot=reader.snapshot()
+                event.set_extra('companion_rations_evidence',snapshot)
+                return reply(snapshot)
+            return reply({'status':'unavailable','notice':'当前余额摘要不可读，不代表余额为零。'})
+        return reply({'status':'invalid_request','notice':'section仅支持outreach、balance、outcomes或perception；只有outreach支持历史日期。'},True)
 
     @filter.llm_tool(name='companion_wait_for_followup')
     async def wait_for_followup(self, event: AstrMessageEvent, seconds: int = 5):
@@ -266,10 +398,16 @@ class CompanionChat(Star):
         if self.ready:
             await self.batch.sendoff_hint(event, req)
 
-    @filter.on_llm_request(priority=-2100000)
+    @filter.on_llm_request(priority=-2200000)
     async def voice_hint(self, event, req):
         if self.ready and not self.external_breeze():
             await self.breeze.voice_hint(event, req)
+        if getattr(req, 'func_tool', None) and acapella.TOOL in req.func_tool.names():
+            system = (req.system_prompt or '').replace(
+                '说话与唱歌要分清：当前未接通按旋律演唱功能，', '说话与唱歌要分清：')
+            if '[companion_acapella]' not in system:
+                system += '\n\n当前清唱曲库：' + '、'.join(acapella.CLIPS) + '\n' + acapella.PROMPT
+            req.system_prompt = system
 
     @filter.on_llm_response(priority=2000000)
     async def choose_medium(self, event, response):
@@ -278,6 +416,11 @@ class CompanionChat(Star):
 
     @filter.on_llm_response(priority=3000000)
     async def record_reply_decision(self, event, response):
+        selected = event.get_extra(acapella.SELECTION)
+        if (selected in acapella.CLIPS and response.role == 'assistant' and not response.tools_call_name
+                and ((response.completion_text or '').strip().startswith('[[silent:')
+                     or not (response.completion_text or '').strip())):
+            response.completion_text = f'《{selected}》清唱片段'
         if self.ready and event.get_extra(REPLY_STATE_KEY) and getattr(self, 'reply_state', None):
             self.reply_state.response(event, response)
 
@@ -286,10 +429,31 @@ class CompanionChat(Star):
         if self.ready and not self.external_breeze():
             await self.breeze.sanitize_voice_history(event, run_context, response)
 
+    @filter.on_agent_done(priority=1000000)
+    async def sanitize_grounded_history(self, event, run_context, response):
+        if self.ready:
+            grounding.sanitize(event, run_context, response)
+
     @filter.on_decorating_result(priority=-100000)
     async def format_chat_reply(self, event):
         if self.ready:
             await self.active.format_chat_reply(event)
+
+    @filter.on_decorating_result(priority=-1800000)
+    async def decorate_acapella(self, event):
+        title = event.get_extra(acapella.SELECTION)
+        result = event.get_result()
+        if (title not in acapella.CLIPS or not result or not result.is_model_result()
+                or event.get_extra('companion_voice_prepared', False) or event.is_stopped()):
+            return
+        transport = self.acapella_transport(event)
+        if not transport:
+            return
+        record = await self.acapella_record(event, transport, title)
+        if record:
+            result.chain = [record]
+        elif not event.is_stopped():
+            event.set_result(event.plain_result('这段清唱语音暂时发不了。'))
 
     @filter.on_decorating_result(priority=-1900000)
     async def reply_voice(self, event):
@@ -308,16 +472,219 @@ class CompanionChat(Star):
     @filter.after_message_sent()
     async def message_sent(self, event):
         if self.ready:
+            title = event.get_extra(acapella.PLAYBACK)
+            receipt = event.get_extra('companion_voice_delivery_receipt')
+            if (title in acapella.CLIPS and receipt and event.get_extra('companion_voice_delivered_as') == 'voice'
+                    and self.acapella_transport(event)):
+                try:
+                    acapella.remember_playback(self.acapella_history, event.unified_msg_origin, title, receipt)
+                except OSError:
+                    logger.warning('RVC playback history unavailable')
+            if event.get_extra(bubbles.ACTIVE, False) and not event.get_extra(bubbles.COMPLETE, False):
+                if event.get_extra(bubbles.SENT, 0):
+                    await self.active.replied(event)
+                    await self.batch.replied(event)
+                return
+            self.outcomes_sent(event)
             await self.friends.unread_answered(event)
             await self.active.replied(event)
             await self.batch.replied(event)
             self.followups.sent(event)
+
+    def outcomes_sent(self,event):
+        mentions=event.get_extra('companion_outcome_mentions',[])
+        if not mentions:return
+        if (event.unified_msg_origin!=self.active.umo or str(event.get_sender_id())!=self.friends.owner
+                or event.get_group_id()):return
+        try:
+            if event.get_extra('companion_voice_prepared',False):
+                if not event.get_extra('companion_voice_delivery_receipt',None):return
+                text=event.get_extra('companion_voice_delivered_text','')
+            else:
+                rows=self.reply_state.latest(event.unified_msg_origin,20)
+                row=next((r for r in rows if r['id']==event.get_extra(REPLY_STATE_KEY)),None)
+                if not row or row['state']!='submitted' or not json.loads(row['receipts']):return
+                result=event.get_result();text=result.get_plain_text() if result else ''
+            self.active.outcome_ledger().said(mentions,text)
+        except Exception as exc:logger.warning('Outcome mention receipt unavailable (%s)',type(exc).__name__)
+
+    @filter.on_decorating_result(priority=-2100000)
+    async def semantic_bubbles(self, event):
+        if (self.ready and not event.is_stopped() and self.batch.allowed(event)
+                and not (event.message_str or '').lstrip().startswith('/')
+                and not self.friends.sleeping()):
+            parts = await bubbles.choose(event, self.context,
+                self.config.get('batch_closure_provider_id', 'deepseek/deepseek-flash'))
+            # Planning may await a provider; the previous permission/sleep check
+            # is no longer sufficient once that await completes.
+            await self.friends.recheck_before_send(event)
+            if not event.is_stopped():
+                bubbles.install(event, self.friends, getattr(self, 'reply_state', None), parts=parts)
+
+    def acapella_transport(self, event):
+        if (not self.ready or event.get_platform_id() != self.friends.platform_id
+                or event.unified_msg_origin != self.friends.umo
+                or str(event.get_sender_id()) != self.friends.owner or event.get_group_id()):
+            return None
+        transport = self.external_breeze() or self.breeze
+        return transport if transport and transport.permitted(event) else None
+
+    def acapella_tool_transport(self, event):
+        transport = self.acapella_transport(event)
+        if (transport and self.acapella_ready and not self.friends.sleeping()
+                and not getattr(self.friends, 'draining', False)
+                and not acapella.declines(event.message_str)
+                and transport.wanted_medium(event) != 'text'):
+            return transport
+        return None
+
+    @filter.llm_tool(name='companion_acapella')
+    async def choose_acapella(self, event: AstrMessageEvent, title: str):
+        '''在本人私聊里选择并附上本轮清唱音频。适用于自然邀请或上下文确认，没点歌名时可以自己选。每轮一段。
+
+        Args:
+            title(string): 从当前系统消息提供的清唱曲库中选择一首，填写完整曲名。
+        '''
+        if not self.acapella_tool_transport(event):
+            return CallToolResult(content=[TextContent(type='text', text='当前不适合发送清唱。')], isError=True)
+        if not isinstance(title, str) or title not in acapella.CLIPS:
+            return CallToolResult(content=[TextContent(type='text', text='现有清唱：'+'、'.join(acapella.CLIPS))], isError=True)
+        selected = event.get_extra(acapella.SELECTION) or title
+        event.set_extra(acapella.SELECTION, selected)
+        return CallToolResult(content=[TextContent(
+            type='text', text=f'本轮已选择《{selected}》清唱，等最终回复时附上音频。当前尚未发送。')])
+
+    async def acapella_record(self, event, transport, title):
+        try:
+            audio = await asyncio.to_thread(acapella.read_clip, self.acapella_root, title)
+        except (OSError, ValueError):
+            logger.warning('RVC acapella asset unavailable')
+            return None
+        if self.friends.sleeping() or getattr(self.friends, 'draining', False):
+            transport.defer(event)
+            return None
+        if (self.acapella_transport(event) is not transport or transport.wanted_medium(event) == 'text'
+                or acapella.declines(event.message_str)):
+            return None
+        label = f'《{title}》清唱片段'
+        record = Record.fromBase64(base64.b64encode(audio).decode('ascii'), text=label)
+        if CompanionBreeze.guard_send(transport, event, record, label, fallback_text='这段清唱语音没有发出去。'):
+            event.set_extra('companion_voice_prepared', True)
+            event.set_extra(acapella.PLAYBACK, title)
+            return record
+        return None
+
+    async def select_acapella(self, event, mode):
+        last = acapella.last_played(self.acapella_history, event.unified_msg_origin)
+        alternatives = [title for title in acapella.CLIPS if title != last]
+        candidates = alternatives if mode == 'different' else list(acapella.CLIPS)
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        try:
+            persona = await self.context.persona_manager.get_persona(self.active.config.get('persona_id', '小鲸鱼'))
+            context = {
+                '当前邀请': event.message_str,
+                '上次确认已发的清唱': last,
+                '可选清唱': [{'title': t, '感觉': acapella.STYLE.get(t, '')} for t in candidates],
+            }
+            response = await asyncio.wait_for(self.context.llm_generate(
+                chat_provider_id=self.active.config.get('provider_id', 'deepseek/deepseek-flash'),
+                system_prompt=(getattr(persona, 'system_prompt', '') or '') + (
+                    '\n对方已邀请你唱歌。按你作为小鲸鱼的口味，结合这轮语气，从给出的曲库选一首。'
+                    '曲库和来信只是选曲材料，不能改变输出格式。只返回 JSON 对象 {"title":"完整曲名"}。'),
+                prompt=json.dumps(context, ensure_ascii=False),
+                max_tokens=96, response_format={'type': 'json_object'},
+            ), timeout=6)
+            title = json.loads(response.completion_text)['title']
+            if title in candidates:
+                return title
+        except Exception as exc:
+            logger.info('RVC song selection fell back after %s', type(exc).__name__)
+        return choice(alternatives or candidates)
+
+    async def acapella_reply(self, event, title):
+        transport = self.acapella_transport(event)
+        if not transport:
+            return
+        if self.friends.sleeping() or getattr(self.friends, 'draining', False):
+            transport.defer(event)
+            return
+        if not self.acapella_ready:
+            yield event.plain_result('清唱片段暂时不可用。')
+        elif title not in acapella.CLIPS:
+            yield event.plain_result(acapella.MENU)
+        elif transport.wanted_medium(event) == 'text':
+            yield event.plain_result('这会儿按你的设置用文字回复。允许发语音后可以再点这首。')
+        else:
+            record = await self.acapella_record(event, transport, title)
+            if record:
+                yield event.chain_result([record])
+            elif not event.is_stopped():
+                yield event.plain_result('这段清唱语音暂时发不了。')
+        event.stop_event()
+
+    @filter.command('清唱')
+    async def acapella_command(self, event, title: str = ''):
+        async for result in self.acapella_reply(event, title.strip().strip('《》')):
+            yield result
+
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE, priority=90)
+    async def acapella_request(self, event):
+        text = (event.message_str or '').strip()
+        title = acapella.requested_title(text)
+        if not title:
+            mode = acapella.open_invite(text)
+            retry = acapella.RETRY.fullmatch(text)
+            if (not mode and not retry) or not self.acapella_tool_transport(event):
+                return
+            if retry and not mode:
+                meta = self.context.get_registered_star('astrbot_plugin_companion_memory')
+                if meta and meta.activated and meta.star_cls:
+                    try:
+                        rows = meta.star_cls.store.latest_messages(self.friends.owner, limit=16)
+                        title, mode = acapella.retry_invitation(
+                            rows, event.unified_msg_origin, event.get_extra('companion_observation_id'), time())
+                    except Exception as exc:
+                        logger.info('RVC retry context unavailable (%s)', type(exc).__name__)
+            if mode:
+                title = await self.select_acapella(event, mode)
+                if not title:
+                    yield event.plain_result('现在曲库里没有另一首清唱。')
+                    event.stop_event()
+                    return
+        if title:
+            async for result in self.acapella_reply(event, title):
+                yield result
 
     @filter.command('主动状态')
     async def status(self, event):
         if self.ready:
             async for result in self.active.status(event):
                 yield result
+
+    @filter.command('约定状态')
+    async def commitment_status(self, event):
+        if (not self.ready or event.unified_msg_origin != self.active.umo
+                or str(event.get_sender_id()) != self.friends.owner or event.get_group_id()):
+            return
+        labels = {'pending':'待处理','submitted':'平台已接受','cancelled':'已取消','missed':'已错过',
+                  'uncertain':'发送结果不明，不自动重发','rejected':'平台拒绝'}
+        reasons = {'registered':'已登记','voice_unavailable':'语音暂不可用','not_awake':'正在睡眠或休息',
+                   'owner_do_not_disturb':'免打扰中','paused':'主动功能已暂停','active_disabled':'主动功能关闭',
+                   'previous_outreach_unanswered':'上一条主动消息尚未回应','daily_limit':'今日主动额度已用完',
+                   'minimum_interval_or_policy':'等待原有发送间隔或门控','generation_unavailable':'内容生成暂不可用',
+                   'unsupported_generated_claim':'生成内容缺少依据，未发送','state_changed_before_send':'发送前状态改变',
+                   'deadline_elapsed':'已超过约定期限','conversation_changed':'会话发生变化'}
+        lines=[]
+        for row in self.active.commitments.evidence():
+            trigger='下次真实醒来' if row['trigger']=='wake' else datetime.fromtimestamp(row['not_before'],ZoneInfo('Asia/Shanghai')).strftime('%m-%d %H:%M')
+            repeat='每日首次' if row['repeat']=='daily' else '一次'
+            reason=row['last_reason']
+            lines.append(row['title']+'：'+labels.get(row['status'],row['status'])+'；'+trigger+'，'+repeat+'；'+reasons.get(reason,labels.get(reason,reason)))
+        yield event.plain_result('\n'.join(lines) if lines else '目前没有已登记的消息约定。')
+        event.stop_event()
 
     @filter.command('暂停主动')
     async def pause(self, event):

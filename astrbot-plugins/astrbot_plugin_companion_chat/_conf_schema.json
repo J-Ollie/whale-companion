@@ -4,6 +4,11 @@
     "description": "正式私聊回复使用 DeepSeek 低强度思考；后台情绪、收尾等判断保留原模型设置",
     "default": true
   },
+  "active_awake_anytime": {
+    "type": "bool",
+    "description": "主动消息在角色清醒时不限钟点；保留暂停、明确免打扰和原配额。普通晚安不再自动禁发到九点。",
+    "default": false
+  },
   "active_enabled": {
     "type": "bool",
     "description": "开启主动聊天",

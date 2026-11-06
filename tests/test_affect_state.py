@@ -171,9 +171,10 @@ class PersistentTests(unittest.IsolatedAsyncioTestCase):
         await self.affect.prepare(self.plugin, self.event(), NOW)
         restarted = Affect(self.store)
         self.assertEqual(restarted.snapshot('12345678', NOW)['余绪'], ['委屈'])
-        self.assertEqual(restarted.snapshot('87654321', NOW)['余绪'], [])
+        self.assertEqual(restarted.snapshot('87654321', NOW)['余绪'], ['委屈'])
         self.assertNotIn('OTHER_PRIVATE', self.model.call_args.kwargs['prompt'])
-        self.assertNotIn('委屈', restarted.render('87654321', NOW))
+        self.assertIn('委屈', restarted.render('87654321', NOW))
+        self.assertNotIn('OTHER_PRIVATE', restarted.render('87654321', NOW))
 
     async def test_new_event_object_same_message_no_double_count(self):
         await self.affect.prepare(self.plugin, self.event(), NOW)
@@ -188,7 +189,7 @@ class PersistentTests(unittest.IsolatedAsyncioTestCase):
         await self.affect.prepare(self.plugin, self.event(), NOW)
         await self.affect.prepare(self.plugin, self.event(mid='msg2'), NOW+15)
         self.assertEqual(self.model.await_count, 2)
-        self.assertLess(self.store.get_meta('affect_v1:12345678')['mood'], -1)
+        self.assertLess(self.store.get_meta('affect_global_v3')['mood'], -1)
 
     async def test_global_daily_budget_does_not_use_memory_extraction_budget(self):
         self.plugin.config['affect_daily_calls'] = 1
@@ -215,7 +216,7 @@ class PersistentTests(unittest.IsolatedAsyncioTestCase):
         text = await self.affect.prepare(self.plugin, self.event(), NOW)
         self.assertIn('平静', text)
         self.assertEqual(self.affect.snapshot('12345678', NOW)['余绪'], [])
-        self.assertEqual(self.store.get_meta('affect_v1:12345678')['audit'][-1]['status'], 'model_error')
+        self.assertEqual(self.store.get_meta('affect_global_v3')['audit'][-1]['status'], 'model_error')
 
     async def test_invalid_model_quote_never_changes_state(self):
         self.model.return_value.completion_text = json.dumps({'delta': -1, 'emotions': ['hurt'], 'resolve': [], 'quote': '没说过'})

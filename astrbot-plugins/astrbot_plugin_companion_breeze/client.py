@@ -6,6 +6,10 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from .compat import peer
+
+clean_instructions=peer('astrbot_plugin_companion_chat.breeze.performance').clean_instructions
+prepare_qq_audio=peer('astrbot_plugin_companion_chat.breeze.audio').prepare_qq_audio
 
 VOICE_ID = 'voc_example_voice'
 MODEL_ID = 'breeze-tts-2'
@@ -56,8 +60,6 @@ class BreezeClient:
         day = datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat()
         if state.get('day') != day:
             state = {'day': day, 'tts': 0}
-        if state.get('tts', 0) >= 20:
-            raise RuntimeError('breeze_daily_limit')
         state['tts'] = state.get('tts', 0) + 1
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         temporary = path.with_suffix('.tmp')
@@ -65,12 +67,16 @@ class BreezeClient:
         temporary.chmod(0o600)
         temporary.replace(path)
 
-    def synthesize(self, text):
+    def synthesize(self, text, instructions=None):
         if not suitable(text):
             raise ValueError('voice_text_unsuitable')
+        direction=clean_instructions(instructions)
+        if instructions and not direction:
+            raise ValueError('voice_direction_unsuitable')
         key = self.key()  # A missing credential consumes no quota.
         self.reserve()  # Attempts are durable; uncertain failures are never retried.
         payload = {'text': text.strip(), 'model_id': MODEL_ID, 'language_code': 'zh'}
+        if direction:payload['instructions']=direction
         request = urllib.request.Request(
             'https://api.breeze.blue/v1/text-to-speech/' + self.voice_id + '?output_format=mp3&delivery=sync',
             data=json.dumps(payload, ensure_ascii=False).encode(),
@@ -87,4 +93,4 @@ class BreezeClient:
         if not (100 < len(audio) <= MAX_AUDIO and
                 (audio.startswith(b'ID3') or audio[0] == 255 and audio[1] & 224 == 224)):
             raise ValueError('invalid_breeze_mp3')
-        return audio
+        return prepare_qq_audio(audio)

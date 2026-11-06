@@ -58,6 +58,19 @@ class DailyTests(unittest.IsolatedAsyncioTestCase):
         row=self.b.read('public')[0];self.assertEqual(row['kind'],'no_entry')
         self.assertEqual(row['reason_status'],'declined');self.assertIn('暂时不写',row['text'])
 
+    async def test_named_private_entry_preserves_name_without_public_exposure(self):
+        self.b.daily['sources']={}
+        self.b.collect([{**self.source,'id':'chat:named','app':'私聊',
+                         'public_content':False,'note':'user: 小林今天和我聊了一个新想法。'}])
+        self.model.side_effect=[
+            json.dumps({'write':True,'text':'今天的交流让我想到一个问题。','source_ids':[]}),
+            json.dumps({'write':True,'text':'小林今天提的那个想法，我还没有想明白。','source_ids':['chat:named']})]
+        await self.b.tick(self.model,now=self.at('23:30'))
+        self.assertNotIn('小林',self.model.await_args_list[0].args[0])
+        self.assertIn('小林',self.model.await_args_list[1].args[0])
+        self.assertEqual(self.b.read('private')[0]['text'],'小林今天提的那个想法，我还没有想明白。')
+        self.assertNotIn('小林',(self.root/'public-diary.jsonl').read_text(encoding='utf-8'))
+
     async def test_old_entries_preserved(self):
         self.b.write('public','旧随手记','phone:one',[self.source])
         await self.b.tick(self.model,now=self.at('23:30'))

@@ -7,7 +7,7 @@ import aiohttp
 from astrbot.api.star import Star, register
 from astrbot.core.provider.entities import ProviderType
 from astrbot.core.provider.provider import STTProvider
-from astrbot.core.provider.register import register_provider_adapter
+from astrbot.core.provider.register import register_provider_adapter, provider_cls_map, provider_registry
 from astrbot.core.utils.media_utils import MediaResolver
 
 TYPE = 'companion_dashscope_stt'
@@ -16,10 +16,60 @@ ENDPOINT = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-gener
 _context = None
 
 
+def own_adapter(metadata):
+    """Ownership is exact, never inferred from a matching provider type alone."""
+    cls = getattr(metadata, 'cls_type', None)
+    return bool(getattr(metadata, 'type', None) == TYPE
+                and getattr(metadata, 'provider_type', None) == ProviderType.SPEECH_TO_TEXT
+                and isinstance(cls, type) and issubclass(cls, STTProvider)
+                and cls.__name__ == 'CompanionDashscopeSTT'
+                and cls.__module__ in (__name__, 'data.plugins.astrbot_plugin_companion_asr.main',
+                                       'astrbot_plugin_companion_asr.main'))
+
+
+def register_own_adapter(cls):
+    """Recover our stale registration after reload/failed import, not a foreign one.
+
+    AstrBot 4.29 removes plugin modules but leaves provider adapters registered.
+    This synchronous decorator replaces only entries owned by this exact plugin.
+    """
+    previous = provider_cls_map.get(TYPE)
+    if previous is not None and not own_adapter(previous):
+        raise ValueError('Provider adapter name belongs to another plugin: '+TYPE)
+    old_registry = list(provider_registry)
+    try:
+        if previous is not None:
+            provider_cls_map.pop(TYPE)
+        provider_registry[:] = [item for item in provider_registry if not own_adapter(item)]
+        return register_provider_adapter(TYPE, '小鲸鱼百炼语音识别',
+                                         provider_type=ProviderType.SPEECH_TO_TEXT)(cls)
+    except BaseException:
+        provider_registry[:] = old_registry
+        if previous is not None:
+            provider_cls_map[TYPE] = previous
+        else:
+            provider_cls_map.pop(TYPE, None)
+        raise
+
+
+def unregister_own_adapter(cls):
+    current = provider_cls_map.get(TYPE)
+    if own_adapter(current) and current.cls_type is cls:
+        provider_cls_map.pop(TYPE)
+    # Identity guard: terminating an old generation cannot remove a new one.
+    provider_registry[:] = [item for item in provider_registry
+                            if not (own_adapter(item) and item.cls_type is cls)]
+
+
 def awake():
     """Use the same live sleep policy as the companion's incoming-message gate."""
     if _context is None:
         return False
+    meta = _context.get_registered_star('astrbot_plugin_companion_chat')
+    chat = meta.star_cls if meta and getattr(meta, 'activated', False) else None
+    if chat is not None:
+        friends = getattr(chat, 'friends', None)
+        return bool(getattr(chat, 'ready', False) and friends and not friends.sleeping())
     meta = _context.get_registered_star('astrbot_plugin_companion_friends')
     friends = meta.star_cls if meta and getattr(meta, 'activated', False) else None
     return bool(friends and not friends.sleeping())
@@ -42,7 +92,7 @@ def parse_transcript(payload):
     return text.strip()
 
 
-@register_provider_adapter(TYPE, '小鲸鱼百炼语音识别', provider_type=ProviderType.SPEECH_TO_TEXT)
+@register_own_adapter
 class CompanionDashscopeSTT(STTProvider):
     def __init__(self, provider_config, provider_settings):
         super().__init__(provider_config, provider_settings)
@@ -78,10 +128,14 @@ class CompanionDashscopeSTT(STTProvider):
         return parse_transcript(result)
 
 
-@register('astrbot_plugin_companion_asr', 'local', 'Native DashScope speech recognition', '0.1.0')
+@register('astrbot_plugin_companion_asr', 'local', 'Native DashScope speech recognition', '0.1.1')
 class CompanionASR(Star):
     async def initialize(self):
         global _context
+        # Disable/enable can reuse the same imported class, without a new import.
+        metadata = provider_cls_map.get(TYPE)
+        if metadata is None or metadata.cls_type is not CompanionDashscopeSTT:
+            register_own_adapter(CompanionDashscopeSTT)
         _context = self.context
         # On a full AstrBot start, third-party adapters register after native providers.
         # Load only this adapter's own previously saved entries, without changing settings.
@@ -95,7 +149,11 @@ class CompanionASR(Star):
     async def terminate(self):
         global _context
         manager = self.context.provider_manager
-        for cfg in self.context.get_config().get('provider', []):
-            if cfg.get('type') == TYPE and cfg['id'] in manager.inst_map:
-                await manager.terminate_provider(cfg['id'])
-        _context = None
+        try:
+            for cfg in self.context.get_config().get('provider', []):
+                if cfg.get('type') == TYPE and cfg['id'] in manager.inst_map:
+                    await manager.terminate_provider(cfg['id'])
+        finally:
+            if _context is self.context:
+                _context = None
+                unregister_own_adapter(CompanionDashscopeSTT)

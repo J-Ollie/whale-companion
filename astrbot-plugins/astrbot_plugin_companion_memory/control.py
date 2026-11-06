@@ -134,7 +134,7 @@ class MemoryControl:
             if len(out)>=limit:break
         return out
 
-    def working(self,qq,query=''):
+    def working(self,qq,query='',*,allow_resume=True):
         plans=[];topics=[]
         for hit in self.store.index.search(qq,[],16,kinds=('fact',),types=('plan',),browse=True,current=True):
             row=self.store.get_entry(qq,hit['ref'])
@@ -151,7 +151,7 @@ class MemoryControl:
         if not old or old[0]!=signature:
             with self.store.atomic():self.store.db.execute('INSERT OR REPLACE INTO memory_working VALUES(?,?,?,?)',(qq,dump(snapshot),signature,time.time()))
         # Restore from current source truth, never trust an old serialized checkpoint.
-        wanted=query_tokens(query);resume=not query.strip() or bool(RESUME.search(query))
+        wanted=query_tokens(query);resume=allow_resume and (not query.strip() or bool(RESUME.search(query)))
         selected=[{**r,'kind':'pending_plan'} for r in plans if resume or wanted&tokens(r['text'])]
         selected+=[{**r,'kind':'open_topic'} for r in topics if resume or wanted&tokens(r['text'])]
         for row in selected:row['note']='持久化交接线索；说过或约好不证明正在执行，也不代表已安排提醒'

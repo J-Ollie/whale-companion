@@ -256,6 +256,29 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(diary[0]['source_id'],self.a.recent()[0]['id'])
         self.assertIn('自己的经历日记',self.a.context())
 
+    async def test_compact_chat_view_keeps_sources_and_full_records_remain_readable(self):
+        for index in range(3):
+            self.a.record(COOL, '真实浏览记录'+str(index), 2, {'remember':True})
+        originals = self.a.experiences.read_bytes()
+        diaries = self.a.rhythm.journal.read_bytes()
+        full = self.a.context()
+        compact = self.a.context(compact=True)
+        self.assertLess(len(compact.encode()), len(full.encode()))
+        self.assertIn(self.a.recent()[-1]['id'], compact)
+        self.assertIn(self.a.rhythm.diary_rows()[-1]['source_id'], compact)
+        self.assertEqual(self.a.experiences.read_bytes(), originals)
+        self.assertEqual(self.a.rhythm.journal.read_bytes(), diaries)
+        self.assertEqual(len(self.a.rhythm.diary_rows()), 3)
+
+    async def test_status_can_omit_duplicate_rhythm_without_losing_scope_or_quota(self):
+        full = self.a.status_context()
+        compact = self.a.status_context(include_rhythm=False)
+        data = json.JSONDecoder().raw_decode(compact.split('：',1)[1])[0]
+        self.assertNotIn('rhythm', data)
+        self.assertIn('browse_daily_limit', data)
+        self.assertIn('已有持续自主访问授权', compact)
+        self.assertIn('rhythm', json.JSONDecoder().raw_decode(full.split('：',1)[1])[0])
+
     async def test_unlimited_visits_allow_rhythm_browse_after_many_visits(self):
         self.config['autonomous_daily_limit']=0
         self.a.state.update(day='2026-10-20',used=1000)

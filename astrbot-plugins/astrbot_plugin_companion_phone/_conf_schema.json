@@ -151,5 +151,20 @@
     "description": "QQ空间：每天独立考虑一次。只决定是否行动，不强制修改；到期可合并一轮，聊天中的完整自主权限不受此周期限制",
     "type": "int",
     "default": 86400
+  },
+  "thinking_enabled": {
+    "description": "先自主思考再决定行动；复用作息决策机会，保留未完问题与自主成长尝试，不增加工具授权",
+    "type": "bool",
+    "default": false
+  },
+  "thinking_model_calls": {
+    "description": "一次自主思考活动的模型请求总上限，含思考、决策、浏览观察与关联整理，2至12；原各模块额度另行保留",
+    "type": "int",
+    "default": 6
+  },
+  "thinking_provider_id": {
+    "description": "自主思考与决策使用的已配置模型提供商",
+    "type": "string",
+    "default": "deepseek/deepseek-flash"
   }
 }

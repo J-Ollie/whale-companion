@@ -26,13 +26,13 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_asr/main.py",
-    "bytes": 4798,
-    "sha256": "0beb624597b77ae241017f93c8b4889fa9293813acb0e3cd4bee6455f5530589"
+    "bytes": 7568,
+    "sha256": "97fc1dc2b351f0d39f185ee317e1a86ccb4c7841ac2719bbb9fcae039cc94391"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_asr/metadata.yaml",
     "bytes": 271,
-    "sha256": "f6f2164dfa02575cd934fe2c3f2f48c1ebb3b793f0fd56f59b40171653273af8"
+    "sha256": "e52815c90aa08e0309af1e821985d7374c8d23895dbc10756c0f597d4314f10b"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_bailian_sing/__init__.py",
@@ -141,18 +141,23 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_breeze/client.py",
-    "bytes": 4020,
-    "sha256": "7b3d53faeb589856180de571e031dc9878ce75bdd633d0430aa1cf4aee8323b3"
+    "bytes": 4380,
+    "sha256": "6b5cd8f14d5591b99eb2389e9af35c02a5d0e69517fabdfbca70cd01915844ab"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_breeze/compat.py",
+    "bytes": 248,
+    "sha256": "143e8e8daf17a7ba7409235f19b701fc124896786ff2a537aada5c71a3704a8d"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_breeze/main.py",
-    "bytes": 11668,
-    "sha256": "b8c3e084dfa140dae47bd549884656b029d49569a8b25b039d76f35821419eed"
+    "bytes": 1575,
+    "sha256": "d266afe7560c4f00eaa157326d090ee3531a7e4e1c8a8e2dcc967703625d785a"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_breeze/metadata.yaml",
-    "bytes": 300,
-    "sha256": "c64eb65e253f2bde134d278f9795438b273404da230e8031579450404842c147"
+    "bytes": 291,
+    "sha256": "f5a5fa31186da1314dbd9a4865773c355eac08ea390afd714d0b7aa7336520e5"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/__init__.py",
@@ -161,8 +166,13 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/_conf_schema.json",
-    "bytes": 2672,
-    "sha256": "52ea1e040839377555327d5ed34d07bc766254d094c1a1e491a36a8a5f3a87ee"
+    "bytes": 2901,
+    "sha256": "844c2ad3d9d332a47082b2de5d1fd96845c433da76f8be03d77a528d961a9c81"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/acapella.py",
+    "bytes": 5238,
+    "sha256": "60d45d91b55a2c2ba901f680ab7e394041cb3cf6fbb9f21776dd2c38b6bd8b15"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/active/__init__.py",
@@ -181,8 +191,8 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/active/main.py",
-    "bytes": 23177,
-    "sha256": "b669ca7efe4fc7f3262ebe940ceb167f2f175332e1cfa6cbb73533d5aa209279"
+    "bytes": 51454,
+    "sha256": "735cc16371c12a9dd8743fc28087f8f16334e3c36cd02c9366e3e773dc4bd52e"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/batch/__init__.py",
@@ -206,8 +216,8 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/behavior.py",
-    "bytes": 6676,
-    "sha256": "60f318017f0a41bab0d8ce9f4d488f83d09c5d8c55d6231140fa53c34aea8d41"
+    "bytes": 8668,
+    "sha256": "21696c6c64d9dd51eeb6ad61f7a7abf44cf98959fde5f3222ee760b70b02070d"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/breeze/__init__.py",
@@ -215,24 +225,54 @@
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/breeze/audio.py",
+    "bytes": 1460,
+    "sha256": "c8b54c41d7471b9e907cef8c5995d2b744d30814663cb028f8f9882271f3234a"
+  },
+  {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/breeze/client.py",
-    "bytes": 4465,
-    "sha256": "6681016144ba5b1e8804b12f3a7f88600e531ba7dd4a48a8d817de3e7d7c5428"
+    "bytes": 4428,
+    "sha256": "73e9275507996e7a53242b320544a9c542644052b66c39ee364738738d7d5ee5"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/breeze/main.py",
-    "bytes": 11056,
-    "sha256": "c982989ebdb77b469e12974e421ed56986dc09185358e9109d8ba12504c9612a"
+    "bytes": 15278,
+    "sha256": "6f7e2eac73601bda33fba1ca46dcaa21039cc6a7b36c78f5a43515b3d5c55250"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/breeze/medium.py",
+    "bytes": 7371,
+    "sha256": "5c107ebcb62b04f200a696c0a28442bc4532955b5702b5a6532391d30758e13a"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/breeze/performance.py",
-    "bytes": 6958,
-    "sha256": "6af4cd6030c1c438d19d366bd5bf18b9bfd9bb3daf3a82a5ad3b70b1534cea95"
+    "bytes": 7423,
+    "sha256": "052791b515081ede4041ac99d5a3fc5bd6d61c812143b04168ac3e34b38a7cf7"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/bubbles.py",
+    "bytes": 9171,
+    "sha256": "7efaba7fe258be2fcf733eba7678d09fbdee72102d467acf10b9fb6ee77ff00a"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/commitments.py",
+    "bytes": 15495,
+    "sha256": "afa7d38dfb922bab7c0638e77a7ef385e232664c2a78f61da8695ccc21bc6368"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/compat.py",
+    "bytes": 248,
+    "sha256": "143e8e8daf17a7ba7409235f19b701fc124896786ff2a537aada5c71a3704a8d"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/contact_policy.py",
+    "bytes": 5763,
+    "sha256": "c36c4f111055f219eb659569ffe979832250b859732a06a93cf6715f76c19597"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/context_guard.py",
-    "bytes": 3810,
-    "sha256": "8e01d44435f8eb8f11776404ac63c7dd10528b44c5f6eab3c450245a03d1364d"
+    "bytes": 5197,
+    "sha256": "f6f94a1da4b43a8043881ff1d2d8603609f359e4d58fbeb8869164ad73f7428c"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/context_material.py",
@@ -276,8 +316,8 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/friends/main.py",
-    "bytes": 16918,
-    "sha256": "2c1f9aac5aa76cd1ace92a11e1a4c1ec25a1a93a554b203c09baa61037f8035f"
+    "bytes": 17130,
+    "sha256": "7132dcd7769ae520b2cf36ddc325fd7112c81c092f9c0a124c03e95ceefef9f4"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/friends/policy.py",
@@ -291,8 +331,13 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/friends/social.py",
-    "bytes": 2459,
-    "sha256": "c5671e5546fcdf8d4ccf0afb8044f444999bf2eca785cbc3cf1bd2fe0210ba88"
+    "bytes": 2537,
+    "sha256": "382b938b46c851f73291934cdce9f2fc6bcc6339b3251a17351e14feee4effdc"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/grounding.py",
+    "bytes": 21746,
+    "sha256": "f58e12578366c682d7d47966f0a19d6d8912708d4e03f6d29a91ee80e54942a2"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/lifecycle.py",
@@ -301,18 +346,38 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/main.py",
-    "bytes": 17312,
-    "sha256": "04a20b64bec085f0797e11d89223db4290a2a804d28ff9bc18dedffeb1eb141d"
+    "bytes": 40452,
+    "sha256": "eb003247ce979d70f8f574b62fd31c7ffc026d013ac5339d47715f4e8c1ed30a"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/metadata.yaml",
-    "bytes": 291,
-    "sha256": "e7cb83c43318bea61c9cbfe354acaf086cd5a723bec7dcb1f684bb1541d09dc9"
+    "bytes": 292,
+    "sha256": "4215305540132984cab054f05ada92869b990ed610113ed6fdaefbb26fdfafea"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/migration.py",
     "bytes": 604,
     "sha256": "9d655329c6832586053457927543c5d84fa2ad5b5ed90b79d68d449d0aaac063"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/outcomes.py",
+    "bytes": 12336,
+    "sha256": "25c5839c95ff46d634e6367a8482e4465007bc51da20eb4e9caf8d4a1ab1ef6c"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/outreach_evidence.py",
+    "bytes": 5740,
+    "sha256": "8a55b7bcb9c91170f982b4b7653ce31ef59a980889e15978037b1be18a8badcb"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/perception.py",
+    "bytes": 8713,
+    "sha256": "69299fe7ad8a7fe3197f255513fa8c2c5cb7df89286fcec488fdb63aa7147543"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_chat/perception_store.py",
+    "bytes": 6504,
+    "sha256": "18a4281beb1b65cb513e733e686a98b43db5031dbdc89c1b1e85cd8b41979bb4"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_chat/reply_state.py",
@@ -371,13 +436,18 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/_conf_schema.json",
-    "bytes": 2215,
-    "sha256": "59b6c037665428b6ca9af4ef73014c4f05e530a93215ab065c2d39191507a49e"
+    "bytes": 2636,
+    "sha256": "33703cd5e25b74c6e4c303dcb33a046baeca8f4675d475cbbd4ed654a238fd2d"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/affect.py",
-    "bytes": 15108,
-    "sha256": "7b77be6decbfdbe94789b3369a58222aa8351c57a152a9c98f4a7fcd1dc8d7ac"
+    "bytes": 31929,
+    "sha256": "c4159d0c20ace6e6168535c2d33a6fc54ba1438ddf481927221a12093c86271e"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/attention.py",
+    "bytes": 3872,
+    "sha256": "b6f2da10a31e5fe4bfaabb34feacd7903f94be8a25f62867e238f57d534d14bb"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/budget.py",
@@ -385,14 +455,29 @@
     "sha256": "d525e9467d171576d1559a9a8f3915d324e12f3632cdc0e282da68ea195c5503"
   },
   {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/clarification.py",
+    "bytes": 7481,
+    "sha256": "71201a6894f0e0e69fd71ece12bf155fd6260369a2afe0b0fd6b27cae284faea"
+  },
+  {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/cognition.py",
-    "bytes": 24784,
-    "sha256": "85ca21a508b0f0fb0a92f008ae4f842eac07f05a2cb74b5894e091889271ebac"
+    "bytes": 26611,
+    "sha256": "1bcc6f21d90eec6e620d84cebbbbdcb4b90ab5ca8e319d42c2c3f238973fb9d2"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/compat.py",
+    "bytes": 248,
+    "sha256": "143e8e8daf17a7ba7409235f19b701fc124896786ff2a537aada5c71a3704a8d"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/continuity.py",
+    "bytes": 9752,
+    "sha256": "58032e7b916244c3bec52fa06c371e77d19e1e4497152f318b82e361ccaad7f3"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/control.py",
-    "bytes": 18330,
-    "sha256": "91ed94a4d15a1b72293ae4d6982fbbdc11610a3084d233a289db06edfcfe8926"
+    "bytes": 18369,
+    "sha256": "8338a35c090fe96d84ec07b008229c17a4982ece80ba73df8f1728fda5deaa3c"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/decisions.py",
@@ -411,13 +496,18 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/growth.py",
-    "bytes": 15441,
-    "sha256": "4f4a33f65d1947b39fba063a718c375af7c19aeeef64e6275f232aa1d30af9ba"
+    "bytes": 15958,
+    "sha256": "b84f90e2701a57bcb2b7c8d9bea021d7255f83041b21f77e439eeeaa1a27333e"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/history_gap.py",
-    "bytes": 3097,
-    "sha256": "a1477e919a6485d3a9cbe67b361d2d4adf06a2606f539e90e217f535e227c75d"
+    "bytes": 3662,
+    "sha256": "b2c810b115c056c8082783c2517243739a1846ee0b4ff016e979c599251d91ab"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/incidents.py",
+    "bytes": 9015,
+    "sha256": "c6cd1354ea13c8ace8e42885a200894f6872222dcbbccfcca0448604bcec8ff0"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/kb_access.py",
@@ -426,23 +516,23 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/lifecycle.py",
-    "bytes": 9693,
-    "sha256": "0e88a98d1bf2ef3f323820224cf1c63692075ce14d9750d73718249ad55dca2f"
+    "bytes": 9910,
+    "sha256": "06a0033ebf7e8a1dd19cad09d526bb3cb26bd5c36b68111ff3e89988cc7b9e9c"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/main.py",
-    "bytes": 54528,
-    "sha256": "9b490d1b92c39630db0b3d75f84bdcf1824f9c9b7ee1159562547a5954c37ac9"
+    "bytes": 63479,
+    "sha256": "6be1710eab90c321ae526aa97743b1cba7447eab834fb8f1d33573c7041e2ecd"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/memory.py",
-    "bytes": 23233,
-    "sha256": "c94dbe46046f8c2910ca532690746e3dbf23d814d530fcc6d22a7a985d2a4c56"
+    "bytes": 25230,
+    "sha256": "7f17da03b958111533a79281b9672c12872fbc3cfcf544165ae05c2c4ce9ea4a"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/metadata.yaml",
     "bytes": 278,
-    "sha256": "7f47d72f32262a102f51ea252bcd9e60c2590b15e652813731720977990d291c"
+    "sha256": "1938563c98018122eecf346e0926fa1a97b2bb17aef54d43d012bc2430af496c"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/portable.py",
@@ -451,28 +541,38 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/profile.py",
-    "bytes": 5454,
-    "sha256": "601688c2278814bd0af4996c68b5613a31cc6679695bebbc88de2b68fb3732aa"
+    "bytes": 6562,
+    "sha256": "fef344f09986d0b0ac66b6edb89ae27328b5f7e8d82875ce8246eec061ba51bb"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/query_plan.py",
+    "bytes": 4947,
+    "sha256": "ed4d6a571823d58e4e4f0feae72f1477a56502b55818bcb8451487e924164f1d"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/recall_index.py",
-    "bytes": 7111,
-    "sha256": "53dac1d8e9783e4046d83ad40581b817fe9df5f324527f365fb6ac69c0086f84"
+    "bytes": 8449,
+    "sha256": "5848afdf5cd43f131adc9d28a67a3e7110baf66ff21e9782940e9ae0f5dc7706"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/reflection.py",
-    "bytes": 2741,
-    "sha256": "2e18876ab7e4e059c5a8c0a9b8b85faa6b1bac5a951389e91c3fbb77b3f1e1f6"
+    "bytes": 3203,
+    "sha256": "19bf215ac7bdd5fe0eaf4b91ca0ae30107ff51b7f3a4e4f4557012c297558c5a"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/relationships.py",
+    "bytes": 12017,
+    "sha256": "0eb3fa2a44846d488165517147b1e90f6ca7833e5c335036113c1f64c9020ad4"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/retrieval.py",
-    "bytes": 6800,
-    "sha256": "1336b5d31a7f94a055f3eab1deb3f00ce95e071fb7c5c1798652510eb6e9e3e9"
+    "bytes": 10755,
+    "sha256": "f9ba2db619abe86dad7986fe048af47cc9dce503b474cb6b408a3c75f43927ae"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/scenes.py",
-    "bytes": 13058,
-    "sha256": "72d65c5a3852ee73d07725f03131741a2e7eb97b141c3e91bde313397d7db820"
+    "bytes": 15337,
+    "sha256": "1bdc14ef17c35c4ad27e406fab042e035c20d42367ced302184e8fe1cbc282a8"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/semantic.py",
@@ -481,8 +581,13 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/shared.py",
-    "bytes": 24063,
-    "sha256": "915bf3e705ab06b94053f6b7c6c62291e4283decc9b19ce8ee7bba915d2c6b87"
+    "bytes": 25098,
+    "sha256": "97faa5800c7b1b149b73267eda6cdde82d0796b977683eefe30a6effed26657d"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_memory/social_state.py",
+    "bytes": 9689,
+    "sha256": "fda4a447b5b9cb84c79d062b63dc7c181e1251c7a38b4b877ed506f56bd07220"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_memory/usage_audit.py",
@@ -501,8 +606,8 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/_conf_schema.json",
-    "bytes": 5752,
-    "sha256": "387fc5fd347c395a0e0868dffea453ad0b62ba2a38fd212f7928a0f36cc303d4"
+    "bytes": 6389,
+    "sha256": "35369c66a127b52a8f259f826b1029260b30a3cb65d77ce3756d2c8d9b116336"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/access.py",
@@ -516,18 +621,33 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/autonomy.py",
-    "bytes": 52677,
-    "sha256": "c95344cd5c933090d16a930e117c1f575f35821984d9780eb1f439bd5d7671a6"
+    "bytes": 56541,
+    "sha256": "5321e73d11a796db1958627c3a8c918d1aaf5facf5d601d75bdb7bdb6160add5"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/books.py",
-    "bytes": 20499,
-    "sha256": "36b7de16fe2e7c54deb34ee14182dffcf767b3d72aa3ffac179642927879ee93"
+    "bytes": 20934,
+    "sha256": "83f8541a1cb6b1f30ded71478467960c3a20a241a529e11c0e7a702ef88b22df"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/common_cognition.py",
+    "bytes": 5934,
+    "sha256": "9c07000b4b57dac331645406b47be8be4a02cc1c47daa6cfdf7177033c89c91d"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/compat.py",
+    "bytes": 248,
+    "sha256": "143e8e8daf17a7ba7409235f19b701fc124896786ff2a537aada5c71a3704a8d"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/connection_control.py",
     "bytes": 2705,
     "sha256": "e0115ce2f4ee0d6d5e9f0fce2d4eabd17fff3b38dba51f68a2d54ed0b96f4f62"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/development.py",
+    "bytes": 3047,
+    "sha256": "d63ed2d39a5b42ade049de34e95be2351687338966986d9883fe5446aa176ce0"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/executor.py",
@@ -538,6 +658,11 @@
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/exploration.py",
     "bytes": 9307,
     "sha256": "8346ede36b0276a085c24a4db15dfc9d8d3c1bbcb4f090fa533736f80ddec7f3"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/expressive.py",
+    "bytes": 3757,
+    "sha256": "2b7e7a96721d43fd0edf46faa68b86978326078b22f516e23e0a626e674e5d12"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/intents.py",
@@ -551,8 +676,8 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/main.py",
-    "bytes": 59779,
-    "sha256": "3d46b12341d231ea53b1d0e953076725a6dbd2ef2652183c22a83f9f399ae4ad"
+    "bytes": 63894,
+    "sha256": "d6a441d9d2748d9cffaf7e5148d0eb5658ce3c33926df3f2857885f9995ac67e"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/media.py",
@@ -560,9 +685,14 @@
     "sha256": "7dc2ba255a4b9c66049a4c3bea5c10c41e1de8208fb3cf8a09b0cd23010093bc"
   },
   {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/memory_reflection.py",
+    "bytes": 7434,
+    "sha256": "218e44b4905a4be26e7c177273187c47adf7a32d83bebaf7530795fa1befd699"
+  },
+  {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/metadata.yaml",
     "bytes": 217,
-    "sha256": "efa77b143eb894f8aa4ae416f21f60b81122b6e6e063b05bbd41e72bacf5573a"
+    "sha256": "868f026b68e63920481d95c2805833ed822269c8c8a41cbb114c2f23997836ea"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/native_transport.py",
@@ -595,19 +725,24 @@
     "sha256": "61729cf473070834cb0ec330c398390d22a8ddd96630041d8ec23dc4e7116d66"
   },
   {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/rations.py",
+    "bytes": 4416,
+    "sha256": "8512c4a2dbe8d8885ab5e9cc7f17ffbe7b9df3d89061938954325d464485b43a"
+  },
+  {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/reading.py",
-    "bytes": 16512,
-    "sha256": "bd44544c0ee387bc216b79c82ffbb68a3c935c882a3ff9c1e3f58a09a49ee631"
+    "bytes": 16525,
+    "sha256": "3db242f77f57a5fa03eafb21b089b783af4ccc52fda7682a04b80796890fa672"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/rhythm.py",
-    "bytes": 16189,
-    "sha256": "3d6c8094c57d95317cde5a548c2e2bc585f4ebd660dd178328c931a6f891ffbb"
+    "bytes": 16279,
+    "sha256": "8a8de21a622f7c54ce3ec55f9788ce7048b2f96f16a3bb99741ee9ff9f2ebc13"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/site_visitors.py",
-    "bytes": 5536,
-    "sha256": "8107d245c40bb0a6ded5cd7c0054eb73e10d08cb2e5ff5b7658a84c2facd3c52"
+    "bytes": 3722,
+    "sha256": "3e552074731064df223147c91eb6dd458288682b61ed92019ef125aa23ee914e"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/skills.py",
@@ -616,18 +751,23 @@
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/social_autonomy.py",
-    "bytes": 8405,
-    "sha256": "ec08a68ffc378258797ab441f6cd969c7e33ff2beff800a33ff8df6ffdf65d9c"
+    "bytes": 10122,
+    "sha256": "7c37a15d0961892176fc75ec624ef0062418d6187cd33ce61bac7f89df2dfea4"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/social_compat.py",
-    "bytes": 10806,
-    "sha256": "c0a2589678e50d8dde0327993c0397b1fb9c7763a64879c503664aeecdf145aa"
+    "bytes": 11600,
+    "sha256": "0d2767124cb5574b1b35ef06c75b869baf5bdfb47d644bfc15bcf8ab65cd95ab"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/social_policy.py",
     "bytes": 1702,
     "sha256": "0ac61f0ede115a183cd03d0972331d1eb0e3c437c28e1a888cb631edd99e59e5"
+  },
+  {
+    "path": "astrbot-plugins/astrbot_plugin_companion_phone/thinking.py",
+    "bytes": 34394,
+    "sha256": "0873cb44d6602e12accbf5e1e51b71c4d101e0e1f1928508679a235ef7597efe"
   },
   {
     "path": "astrbot-plugins/astrbot_plugin_companion_phone/ui.py",
@@ -780,6 +920,11 @@
     "sha256": "b9a5704111306632cca2b3b834bc3e3a7e49d95caf07481be6c387f6d8a787f6"
   },
   {
+    "path": "tests/test_acapella.py",
+    "bytes": 14095,
+    "sha256": "999ae09ab4f000508667661fd3125a877c481b5178d63bd1f503f117b73d4acb"
+  },
+  {
     "path": "tests/test_active.py",
     "bytes": 12013,
     "sha256": "9640bb920c04671886b2c7604f68f0a8a07e8153ca7c6c7b2b1ffffa36be8fba"
@@ -796,8 +941,8 @@
   },
   {
     "path": "tests/test_affect_state.py",
-    "bytes": 14044,
-    "sha256": "9a9b9ff1f42830430e49e0908a72f7a7ff923bd318b686c5b63691743bade325"
+    "bytes": 14122,
+    "sha256": "704f06ce016456db59cc7f5dbdfd6afc735a4171b437b1a6354566346d18bc69"
   },
   {
     "path": "tests/test_archive.py",
@@ -831,8 +976,8 @@
   },
   {
     "path": "tests/test_breeze_bridge.py",
-    "bytes": 17715,
-    "sha256": "1c7b118aff87d02a1cf3e64359e647c973d248dbe2876f438642819a3976a832"
+    "bytes": 18213,
+    "sha256": "0dccfd44d54932cc9d6b7e3aee08f55f0208aff63d7827156c8622b61e6949cd"
   },
   {
     "path": "tests/test_chat_pacing.py",
@@ -847,7 +992,7 @@
   {
     "path": "tests/test_chat_unified.py",
     "bytes": 16926,
-    "sha256": "a25f3e717e361fb73499c81cc686ffe7a71a80cec33c6e8ecc8911f35009268e"
+    "sha256": "991b035ed56ccc77b2cf770e20e00f1b8aef49df8239ac12d1f188954c2599fd"
   },
   {
     "path": "tests/test_cognition.py",
@@ -855,9 +1000,19 @@
     "sha256": "106b0c43a571c697a7bb1a7aec6ccf1b2b3a68b8a9653af6559b0dd86f7b50aa"
   },
   {
+    "path": "tests/test_commitments.py",
+    "bytes": 17994,
+    "sha256": "9b2f06e7c4f0c07189269e88b4e3302a59bd5a48ed41ecd20d7357f711a90546"
+  },
+  {
+    "path": "tests/test_common_cognition.py",
+    "bytes": 8271,
+    "sha256": "20e6370a2fdf7d7c6e82e9c8c8130bde5a5f015464638377d278e7be74794710"
+  },
+  {
     "path": "tests/test_companion_asr.py",
-    "bytes": 4280,
-    "sha256": "03329b6fda2dc409b2a6c5a9ce25de7bd20f38932f65723d1807e70100a060b2"
+    "bytes": 9333,
+    "sha256": "3ea02b3faffaa288f5622a471bcf1b86b93c1b6f3900ccd5c47b38cc756a0779"
   },
   {
     "path": "tests/test_context_continuity.py",
@@ -866,13 +1021,13 @@
   },
   {
     "path": "tests/test_context_round_guard.py",
-    "bytes": 5398,
-    "sha256": "3abacc76eda487529c6ce8f4f8014b61f5375ec6af8b1785189ae43a5b4ccbe2"
+    "bytes": 7825,
+    "sha256": "f1a9a86394713b25acc3452f53298c5a8c95dc7adb9030f5e825a6604c0311b4"
   },
   {
     "path": "tests/test_daily_diary.py",
-    "bytes": 12302,
-    "sha256": "fc5c520539f6877b634b9ef43fe57515f7c3efafc395218ce3b32bcb8c44bb37"
+    "bytes": 13299,
+    "sha256": "144afb451aee737f069c40ac1d33b1a6691bf8d3f4b7e00edb27aa8de203f748"
   },
   {
     "path": "tests/test_dialogue_feedback.py",
@@ -925,9 +1080,14 @@
     "sha256": "981ed63e5d60e6058c92b0e3a36e446cde308f8b224e9cf6c1294e53223b8e2b"
   },
   {
+    "path": "tests/test_grounding_dialogue.py",
+    "bytes": 8783,
+    "sha256": "a248fe5f153539123ff9244430f5703192ca5d4cccc89d4d4030550e820f402b"
+  },
+  {
     "path": "tests/test_history_gap_recovery.py",
-    "bytes": 8368,
-    "sha256": "0c50e9219e2f49cb3e5ba48a62c79fcfff0d24d94607f730df4fa37432e74bd7"
+    "bytes": 10668,
+    "sha256": "0cfa14c6a733296366b6eb4164454f1f559dc2890935f494ce2ecf0ca09268f8"
   },
   {
     "path": "tests/test_knowledge.py",
@@ -958,6 +1118,11 @@
     "path": "tests/test_memory_completeness_hooks.py",
     "bytes": 4517,
     "sha256": "6c8fd7223907dc1526644ed480345cddf67798e42c3ed1b07848a257b592da2d"
+  },
+  {
+    "path": "tests/test_memory_continuity.py",
+    "bytes": 11088,
+    "sha256": "4c356b17f020a9b4f7a0d6e6ab9dca7ccd1c67063a8bf5df24f970025a79ab85"
   },
   {
     "path": "tests/test_memory_control.py",
@@ -995,6 +1160,21 @@
     "sha256": "f8a872c9f1633ff29c3b14846a6f9c8eddd73ff568cd19d7cd855d631c2fc87b"
   },
   {
+    "path": "tests/test_outcome_expression.py",
+    "bytes": 24329,
+    "sha256": "3c9526181e6241adf0ec397a35b57492561ddb3c7437a62b9e2375307fcfc971"
+  },
+  {
+    "path": "tests/test_perception_evidence.py",
+    "bytes": 15986,
+    "sha256": "99c1eac28311e104a4b42d086297abb89f169587a417e9c49f9dec90c1692c9c"
+  },
+  {
+    "path": "tests/test_phase2_closeout.py",
+    "bytes": 11351,
+    "sha256": "8235d2820f26192268bdf78fab3e0ed4b60fa4e3969537890168dd8ad6e0e018"
+  },
+  {
     "path": "tests/test_phone.py",
     "bytes": 27433,
     "sha256": "7167cc616ea3f002d1abc52241cf0097de944b377b182435f6c1e283efac18fb"
@@ -1015,6 +1195,11 @@
     "sha256": "1682a556f477489566aeb1848ebb08bb1d20cbf2fd99452a4b804ab968b303bc"
   },
   {
+    "path": "tests/test_plugin_interop.py",
+    "bytes": 9023,
+    "sha256": "a61b4fe6ed1c8b5f78ae3ea6c013a1dc8cf95d91818bd150c41be77a6341000c"
+  },
+  {
     "path": "tests/test_private_vault.py",
     "bytes": 15728,
     "sha256": "56ea16ebb16fa0fdb4b5e250b336ef314eb55d88b06eaa24950b565a35292c7a"
@@ -1026,8 +1211,8 @@
   },
   {
     "path": "tests/test_public_reading.py",
-    "bytes": 17435,
-    "sha256": "52411a117f59831c9038229f1964b9d1c28eae9d87952bb486ea79f4d1771688"
+    "bytes": 18179,
+    "sha256": "c08f9ebb34c9ae64f38d4a13c1ef29945cb1935ec32124345e307dacb8efe199"
   },
   {
     "path": "tests/test_qq_comments.py",
@@ -1040,9 +1225,34 @@
     "sha256": "ceacb0e01892821772b225976d9459f037197508c32c2ade6d83a2474d2eac62"
   },
   {
+    "path": "tests/test_query_planning.py",
+    "bytes": 10115,
+    "sha256": "503df46e0e08bb32b02c676c86a81391661367b98ffdbfecdc9ee7b9fe765da0"
+  },
+  {
     "path": "tests/test_qzone.py",
     "bytes": 23677,
     "sha256": "f0d0b2346ae2faf3573bf2fb90c365b13434d1bc61865a7f47f497ba5979f326"
+  },
+  {
+    "path": "tests/test_rations_evidence.py",
+    "bytes": 15360,
+    "sha256": "fd743d6a0c687c57292c170783ad91f2353b3ef7c73aa471e85c1fd8be61c743"
+  },
+  {
+    "path": "tests/test_recall_confidence.py",
+    "bytes": 5273,
+    "sha256": "d4e11560e19d720cba76070abb0d74d8d33c64da57f3a174b44e0316d392b957"
+  },
+  {
+    "path": "tests/test_reference_clarification.py",
+    "bytes": 12914,
+    "sha256": "c64da6822606786a6164c94e766e1de0f31ca98d902656ab0df2be24564f3cdb"
+  },
+  {
+    "path": "tests/test_relationships.py",
+    "bytes": 7827,
+    "sha256": "538ef87fd4b75bf30c4ec77d113e34331e861002b1380fe634ec1f2fec0b0243"
   },
   {
     "path": "tests/test_reply_state.py",
@@ -1051,13 +1261,18 @@
   },
   {
     "path": "tests/test_rhythm.py",
-    "bytes": 16603,
-    "sha256": "e2d9fc86898370b72e85d423e086d3585cb13fb97c3f0aa58341f3319e9dbccb"
+    "bytes": 17933,
+    "sha256": "3ec6f3dce92eb28864d0986173c2307c732d996b12b6c74aca085e2b77ce7bdb"
   },
   {
     "path": "tests/test_self_voice.py",
     "bytes": 12906,
     "sha256": "db274a7a76cea4f208d1fa030670582cf0f47c37ec82ffc90ba8a5f65ccd5dda"
+  },
+  {
+    "path": "tests/test_semantic_bubbles.py",
+    "bytes": 12395,
+    "sha256": "6ad35afa17558863d6432cd28d813aa9de178f5647ee23819bdffab51a20962c"
   },
   {
     "path": "tests/test_shared_memory.py",
@@ -1085,6 +1300,16 @@
     "sha256": "4285004e89c627893848bec3ebf59fcffa546e68a3362f8d1c1f5e2dbdc40d6f"
   },
   {
+    "path": "tests/test_situated_emotion.py",
+    "bytes": 13679,
+    "sha256": "f1ed483d0000d8ea4adb5b37780110975972f8316200f6d5e6e9457b63d7c9a7"
+  },
+  {
+    "path": "tests/test_situated_hooks.py",
+    "bytes": 3598,
+    "sha256": "48a4f6f6928f7b316d1391072cd6c929baf1c2882c54c606e5bd9e0ad28a3dce"
+  },
+  {
     "path": "tests/test_skills.py",
     "bytes": 4270,
     "sha256": "f6c27c346556245ba1c7b51702d9db5d544bb4d0397ddcbb74f51d05cf553036"
@@ -1110,6 +1335,26 @@
     "sha256": "c7387e8b06db3c633bcad163df0fddedff41ef983e8164039ff894b4c2ddcda0"
   },
   {
+    "path": "tests/test_social_state.py",
+    "bytes": 16113,
+    "sha256": "ea84c26c21bc8be8df9b585d0f66bcdd6889f1cbb821c5c573ea724f4a6649c8"
+  },
+  {
+    "path": "tests/test_thinking.py",
+    "bytes": 20995,
+    "sha256": "58a1f3cf73aaa2482c00e86a1f9d50859a0e8abfe14f36891ab53bbe50663e53"
+  },
+  {
+    "path": "tests/test_thinking_hooks.py",
+    "bytes": 4666,
+    "sha256": "5ae462d6b0abc1bb134ca405396cbc0099a2be4c4f65f81ebc716b83593764b1"
+  },
+  {
+    "path": "tests/test_thinking_memory.py",
+    "bytes": 12406,
+    "sha256": "e02019c98b0f9f6e8de3bf14d265d67164164b0c9ccff14424234bf1b23cf59d"
+  },
+  {
     "path": "tests/test_turn_end.py",
     "bytes": 8415,
     "sha256": "6a3084323ef546276e4636b597d9e4c29b643f093da0197c68779e1a5cd180cd"
@@ -1126,8 +1371,8 @@
   },
   {
     "path": "tests/test_voice_performance.py",
-    "bytes": 12930,
-    "sha256": "cab4142406f5bc0d9ef2a8c5fadc038864cc9d2c8e42c15fae667943c8e92fd6"
+    "bytes": 17126,
+    "sha256": "eb6bebac752918a89bb6f099d8496a4c2cddd53d64f60e85ae7c2fae3bcc1d8b"
   },
   {
     "path": "tests/test_voice_pipeline.py",
@@ -1143,5 +1388,10 @@
     "path": "tests/test_voice_routing.py",
     "bytes": 9437,
     "sha256": "13f1763d02115bae9ed3208779c90d338820e266718aa6efdba6433cbf76bfd1"
+  },
+  {
+    "path": "tests/test_voice_tail.py",
+    "bytes": 4031,
+    "sha256": "e30a224caef54e44387c2c9ea0f3d21fcf7719ef792ce160fd28026c16712d9b"
   }
 ]

@@ -85,10 +85,17 @@ class SocialCompat:
                     row={'at':time.time(),'action':path,'hash':digest,'result':'reserved'}
                     self.state['actions']=self.state['actions'][-199:]+[row];self.save();kwargs['retry_on_timeout']=False
                     try:payload=await original(method,path,**kwargs)
-                    except BaseException:row['result']='uncertain';self.save();raise
+                    except BaseException as exc:
+                        row['result']='uncertain';self.save()
+                        report=getattr(self.phone,'report_own_outcome',None)
+                        if callable(report):report('social','operate','social_unconfirmed',error_type=type(exc).__name__)
+                        raise
                     row['result']='api_acknowledged'
                     if isinstance(payload,dict):row['fid']=str(payload.get('fid') or payload.get('tid') or '')
-                    self.save();return payload
+                    self.save()
+                    report=getattr(self.phone,'report_own_outcome',None)
+                    if callable(report):report('social','operate','',recovery='later_same_kind_succeeded')
+                    return payload
             except ValueError as exc:raise error(str(exc)) from exc
         async def public_history(event=None):return ''
         async def factual_reply(event,payload,fallback):
@@ -159,9 +166,13 @@ class SocialCompat:
             plugin=self.bind();autonomy=getattr(self.phone,'social_autonomy',None)
             if autonomy:autonomy.tick()
             path=self.phone.root/'social-compat-status.json';temp=path.with_suffix('.tmp')
+            thinker=getattr(self.phone,'thinking',None)
             temp.write_text(json.dumps({'at':time.time(),'qzone_ultra_active':plugin is not None,
                 'controller_guarded':bool(plugin and getattr(plugin.controller,'_companion_social_adapter',None) is self),
                 'full_social_autonomy':self.full(),'autonomy_worker_ready':bool(autonomy and not autonomy.closed),
+                'thinking_ready':bool(thinker and thinker.enabled()),
+                'thinking_paused':bool(thinker and (not thinker.store.healthy or thinker.store.meta('paused',False))),
+                'thinking_order':'thought_with_optional_recall_then_decision_then_execution',
                 'legacy_phone_space_writes':False}),encoding='utf-8')
             temp.chmod(0o600);temp.replace(path);await asyncio.sleep(2)
 

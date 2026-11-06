@@ -87,11 +87,22 @@ class SharedMemory:
         text=('个人名字尚未确定，小鲸鱼是目前的称呼。' if not profile.get('name','').strip() else '公开名字：'+profile['name']+'。')
         if profile.get('traits'):text+='公开表达习惯：'+profile['traits']
         self.put(PUBLIC,'identity',text,'approved-public-profile')
-        self.put(PUBLIC,'relationship','F1nger是认识的管理员。这一公开关系不授权披露私聊，也不以昵称判断管理权限。','approved-owner-relationship')
+        from .profile import PUBLIC_RELATIONSHIP
+        self.put(PUBLIC,'relationship',PUBLIC_RELATIONSHIP,'approved-owner-relationship')
         # Only entries already explicitly marked public; no private diary or
         # personal core fact is a source for this pipeline.
         path=self.p.store.folder.parent/'companion_phone/public-diary.jsonl'
         seen={'approved-public-profile','approved-owner-relationship'}
+        # Only explicit confirmations marked public; never derive from attitudes.
+        if self.p.store.db.execute("SELECT 1 FROM sqlite_master WHERE name='relationship_facts'").fetchone():
+            for row in self.p.store.db.execute("SELECT id,text,qq,at FROM relationship_facts WHERE scope='public' AND status='confirmed'"):
+                source='confirmed-relationship:'+row['id'];seen.add(source)
+                self.put(PUBLIC,'relationship',row['text'],source,row['qq'],at=row['at'])
+            for row in self.db.execute("SELECT id,source FROM records WHERE kind='relationship' AND source LIKE 'confirmed-relationship:%' AND status='active'").fetchall():
+                if row['source'] not in seen:
+                    with self.db:
+                        self.db.execute("UPDATE records SET status='withdrawn' WHERE id=?",(row['id'],))
+                        self.db.execute('DELETE FROM search WHERE ref=?',(row['id'],))
         if path.exists():
             for line in path.read_text(encoding='utf-8').splitlines():
                 try:row=json.loads(line)
@@ -102,7 +113,9 @@ class SharedMemory:
                 seen.add(source);self.put(PUBLIC,'public_diary',text,source,at=row.get('at') if type(row.get('at')) in (int,float) else 0)
         notebook=self.p.store.folder.parent/'companion_phone/public-notes.sqlite3'
         if notebook.exists():
-            from astrbot_plugin_companion_phone.reading import public_url,ReadingError
+            from .compat import peer
+            reading=peer('astrbot_plugin_companion_phone.reading')
+            public_url,ReadingError=reading.public_url,reading.ReadingError
             with sqlite3.connect(notebook.resolve().as_uri()+'?mode=ro',uri=True) as db:
                 db.row_factory=sqlite3.Row
                 if db.execute('PRAGMA user_version').fetchone()[0]==1:
@@ -125,7 +138,8 @@ class SharedMemory:
         if not mid:return
         raw=event.message_obj.raw_message
         if assistant is None:
-            from astrbot_plugin_companion_chat.context_material import text_of
+            from .compat import peer
+            text_of=peer('astrbot_plugin_companion_chat.context_material').text_of
             text=text_of(getattr(event.message_obj,'message',[]))
             if not text.strip() or text.lstrip().startswith('/'):return
             return self.put(scope,'group_statement',text,scope+':group-user:'+mid+':'+str(event.get_sender_id()),str(event.get_sender_id()),

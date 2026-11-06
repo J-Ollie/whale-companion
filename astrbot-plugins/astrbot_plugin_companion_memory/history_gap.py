@@ -14,23 +14,35 @@ def normalized(text):
     return re.sub(r'\s+', '', str(text))
 
 
+def authored_text(message):
+    if not isinstance(message, dict) or message.get('role') != 'user':
+        return ''
+    content = message.get('content', '')
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ''
+    return '\n'.join(p.get('text', '') for p in content if isinstance(p, dict)
+        and p.get('type') == 'text' and not p.get('_no_save')
+        and not p.get('text', '').lstrip().startswith(('<system_reminder>', '<companion_', '[Image ')))
+
+
 def user_texts(contexts):
-    result = []
-    for message in contexts or []:
-        if not isinstance(message, dict) or message.get('role') != 'user':
-            continue
-        content = message.get('content', '')
-        if isinstance(content, str):
-            text = content
-        elif isinstance(content, list):
-            text = '\n'.join(p.get('text', '') for p in content if isinstance(p, dict)
-                and p.get('type') == 'text' and not p.get('_no_save')
-                and not p.get('text', '').lstrip().startswith(('<system_reminder>', '<companion_context>')))
-        else:
-            continue
-        if normalized(text):
-            result.append(normalized(text))
-    return result
+    return [normalized(text) for row in contexts or [] if (text := authored_text(row)).strip()]
+
+
+def retrieval_query(query, contexts):
+    """An attachment has no textual query; use nearby user words for relevance."""
+    placeholders = {'[图片]', '[表情]', '[image]', '[收到非文字消息，附件内容未保存到文本记忆]'}
+    if query.strip() and query.strip().lower() not in placeholders:
+        return query
+    texts = []
+    for row in (contexts or [])[-12:]:
+        text = authored_text(row)
+        lines = [line for line in text.splitlines() if line.strip() and line.strip().lower() not in placeholders]
+        if lines:
+            texts.append('\n'.join(lines))
+    return clip('\n'.join(texts[-2:]), 900)
 
 
 def recent_gap(cognition, qq, contexts, *, origin, query='', before_id=None, at=None):

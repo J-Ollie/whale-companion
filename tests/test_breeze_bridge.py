@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.environ.get('COMPANION_TEST_PLUGINS', str(Path(__file__).parent)))
 from astrbot_plugin_companion_breeze.client import BreezeClient, requested, preference
+from astrbot_plugin_companion_chat.breeze.client import BreezeClient as UnifiedBreezeClient
 from astrbot_plugin_companion_breeze.main import CompanionBreeze
 from astrbot_plugin_companion_friends.delivery import VoiceDelivery
 from astrbot.api.message_components import Plain, Record
@@ -58,15 +59,19 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(preference('发语音\n不用发语音，文字回复就好'), 'text')
         self.assertEqual(preference('不要语音\n现在用语音回复'), 'voice')
 
-    def test_quota_survives_restart_and_never_resets_corrupt_state(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            client = BreezeClient(tmp)
-            for _ in range(20): client.reserve()
-            with self.assertRaises(RuntimeError): BreezeClient(tmp).reserve()
-            path = Path(tmp) / 'state.json'
-            path.write_text('{broken')
-            with self.assertRaises(ValueError): client.reserve()
-            self.assertEqual(path.read_text(), '{broken')
+    def test_count_survives_restart_without_the_old_cap(self):
+        for client_type in (BreezeClient, UnifiedBreezeClient):
+            with self.subTest(client=client_type.__module__), tempfile.TemporaryDirectory() as tmp:
+                client = client_type(tmp)
+                for _ in range(20):
+                    client.reserve()
+                client_type(tmp).reserve()
+                path = Path(tmp) / 'state.json'
+                self.assertEqual(json.loads(path.read_text())['tts'], 21)
+                path.write_text('{broken')
+                with self.assertRaises(ValueError):
+                    client.reserve()
+                self.assertEqual(path.read_text(), '{broken')
 
     def test_provider_contract_and_private_input_are_minimal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -75,8 +80,9 @@ class ClientTests(unittest.TestCase):
             context = unittest.mock.MagicMock()
             context.__enter__.return_value = response
             opener = SimpleNamespace(open=unittest.mock.Mock(return_value=context))
-            with patch.object(client, 'key', return_value='synthetic-secret'), patch('urllib.request.build_opener', return_value=opener):
-                self.assertEqual(client.synthesize('你好'), AUDIO)
+            with patch.object(client, 'key', return_value='synthetic-secret'), patch('urllib.request.build_opener', return_value=opener), patch('astrbot_plugin_companion_breeze.client.prepare_qq_audio', return_value=b'RIFF-padded') as prepare:
+                self.assertEqual(client.synthesize('你好'), b'RIFF-padded')
+            prepare.assert_called_once_with(AUDIO)
             req = opener.open.call_args.args[0]
             self.assertEqual(json.loads(req.data), {'text': '你好', 'model_id': 'breeze-tts-2', 'language_code': 'zh'})
             self.assertIn('/voc_example_voice?', req.full_url)
@@ -158,7 +164,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         await self.plugin.voice_hint(Event(), req)
         self.assertIn('你能够用这条声线发送说话语音', req.system_prompt)
         self.assertEqual(len(req.extra_user_content_parts), 1)
-        self.assertIn('自己的声线', req.extra_user_content_parts[0].text)
+        self.assertIn('text写自然口语正文', req.extra_user_content_parts[0].text)
 
     async def routed(self, choice, incoming='今天聊点什么', reply='我想用自己的声音和你说句话', sender='100000001', verified=False):
         event = Event(sender=sender, verified=verified); event.message_str = incoming
@@ -222,7 +228,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.plugin.client.synthesize.assert_not_called()
 
     async def test_autonomous_provider_failure_keeps_clean_text_without_retry(self):
-        self.plugin.client.synthesize.side_effect = RuntimeError('breeze_daily_limit')
+        self.plugin.client.synthesize.side_effect = RuntimeError('breeze_audio_not_complete')
         event = await self.routed('voice')
         await self.plugin.reply_voice(event)
         self.assertEqual(event.result.get_plain_text(), '我想用自己的声音和你说句话')
@@ -266,7 +272,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_sleep_crossing_synthesis_requeues_without_sending(self):
         event = Event()
         event.send = AsyncMock()
-        def synth(_): self.sleep = True; return AUDIO
+        def synth(_, instructions=None): self.sleep = True; return AUDIO
         self.plugin.client.synthesize.side_effect = synth
         await self.plugin.reply_voice(event)
         self.assertTrue(event.stopped)

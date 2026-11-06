@@ -76,6 +76,11 @@ class SocialAutonomy:
     def tick(self):
         if self.closed or not self.phone.config.get('social_full_autonomy_enabled',False):return
         if self.task and not self.task.done():return
+        activity=getattr(getattr(self.phone,'autonomy',None),'session',None)
+        if activity and not activity.done():return
+        thinker=getattr(self.phone,'thinking',None)
+        if thinker and self.phone.config.get('thinking_enabled',False):
+            if not thinker.enabled() or thinker.store.meta('paused',False):return
         now=time.time()
         due=[k for k in self.DEFAULT_INTERVALS if now>=self.state['next_by_category'][k]]
         if not due:return
@@ -105,8 +110,21 @@ class SocialAutonomy:
         p=self.phone
         categories=list(self.DEFAULT_INTERVALS) if categories is None else categories
         tools=self.tools_for(categories) if tools is None else tools
+        started=False
         try:
             p.social_compat.check();p.social_compat.bind()
+            started=True
+            autonomy=getattr(p,'autonomy',None)
+            snapshot=autonomy.state['last_user_at'] if autonomy else None
+            def reflection_guard():
+                p.social_compat.check()
+                if autonomy and autonomy.state['last_user_at']!=snapshot:raise asyncio.CancelledError()
+                cfg=p.context.get_config(umo=p.umo)
+                if not cfg.get('provider_settings',{}).get('enable',False):raise ValueError('模型已暂停')
+                platform_cfg=cfg.get('platform_settings',{})
+                if platform_cfg.get('enable_id_white_list') and p.umo not in platform_cfg.get('id_whitelist',[]):raise ValueError('入口已离开白名单')
+            thinker=getattr(p,'thinking',None)
+            thought=await thinker.social_reflection(reflection_guard) if thinker and p.config.get('thinking_enabled',False) else None
             platform=p.context.get_platform_inst(p.config.get('platform_id','qq-companion'))
             if not platform:raise ValueError('QQ连接不可用')
             cfg=p.context.get_config(umo=p.umo)
@@ -124,6 +142,10 @@ class SocialAutonomy:
                 +'\n公开日记：'+json.dumps(p.books.read('public',3),ensure_ascii=False)
                 +'\n公开阅读经历：'+p.public_reading_context()
                 +'\n可用公开图片：'+json.dumps(p.media.recent(limit=12,public=True) if 'identity' in categories else [],ensure_ascii=False))
+            if thought is not None:prompt+='\n你刚才独立思考留下的结果（不是任务，可决定不行动）：'+json.dumps(thought,ensure_ascii=False)
+            common=getattr(thinker,'common_context',None)
+            if common:prompt+='\n'+common()
+            reflection_guard()
             await asyncio.wait_for(p.context.tool_loop_agent(event=self.event(platform),
                 chat_provider_id=p.config.get('social_provider_id','deepseek/deepseek-flash'),
                 prompt=prompt,system_prompt=identity+'\n'+PUBLIC_OWNER_INTRO+SOCIAL_POLICY,
@@ -133,6 +155,8 @@ class SocialAutonomy:
             self.state['last_result']='interrupted';raise
         except Exception as exc:
             self.state['last_result']='deferred';self.state['last_error_type']=type(exc).__name__
+            report=getattr(p,'report_own_outcome',None)
+            if started and callable(report):report('social','cycle','execution_error',error_type=type(exc).__name__)
         finally:self.save()
 
     async def close(self):

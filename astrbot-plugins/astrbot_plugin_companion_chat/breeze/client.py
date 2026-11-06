@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from .performance import clean_instructions
+from .audio import prepare_qq_audio
 
 VOICE_ID = 'voc_example_voice'
 MODEL_ID = 'breeze-tts-2'
@@ -58,8 +59,6 @@ class BreezeClient:
         day = datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat()
         if state.get('day') != day:
             state = {'day': day, 'tts': 0}
-        if state.get('tts', 0) >= 20:
-            raise RuntimeError('breeze_daily_limit')
         state['tts'] = state.get('tts', 0) + 1
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         temporary = path.with_suffix('.tmp')
@@ -95,4 +94,4 @@ class BreezeClient:
         if not (100 < len(audio) <= MAX_AUDIO and
                 (audio.startswith(b'ID3') or audio[0] == 255 and audio[1] & 224 == 224)):
             raise ValueError('invalid_breeze_mp3')
-        return audio
+        return prepare_qq_audio(audio)
