@@ -1,3 +1,4 @@
+from . import quota as q
 """Owner-only phone tools, separate from ordinary chat and background reflection."""
 import base64
 import asyncio
@@ -21,6 +22,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 from .phone import Phone, PhoneError, PHONE_IP
 from .autonomy import AutonomousBrowser,TZ,RESULT_LABELS
 from .books import Books
+from .self_experience import SelfExperience
 from .social_policy import BOT_QQ,PUBLIC_OWNER_INTRO,SOCIAL_POLICY
 from .site_visitors import VisitorInbox
 from .rations import Rations
@@ -75,10 +77,11 @@ class CompanionPhone(Star):
         self.autonomy=AutonomousBrowser(self.phone,self.config,self.autonomy_model,self.autonomy_background)
         self.executor=None
         if config.get('native_executor_enabled',False):
-            self.executor=Executor(self.root,self.executor_allowed,lambda:enabled_apps(self.config).keys())
+            self.executor=Executor(self.root,self.executor_allowed,lambda:enabled_apps(self.config).keys(),lambda:self.config.get('full_phone_access') is True)
             self.phone.executor=self.executor;self.phone.native=NativeTransport(self.executor)
             self.phone.executor_self_test=self.executor_self_test
-        self.books=Books(self.root)
+        self.self_experience=SelfExperience(self.root,self.umo)
+        self.books=Books(self.root,experience=self.self_experience)
         self.activity=ActivityLedger(self.root)
         self.visitor_inbox=VisitorInbox(self.root)
         self.rations=Rations(self.root)
@@ -207,8 +210,10 @@ class CompanionPhone(Star):
             identity='\n'.join(line for line in persona.system_prompt.splitlines()
                 if not re.search(r'F1nger|管理员|\d{5,}',line))[:4000]
             identity+='\n'+getattr(getattr(self,'thinking',None),'common_context',lambda:'')()
+            if q.enabled(self.config):identity+='\n'+q.RULE
             if image is not None:
-                image_file=self.root/('public-image-review-'+uuid.uuid4().hex+'.jpg')
+                suffix='.png' if image.startswith(b'\x89PNG\r\n\x1a\n') else '.jpg'
+                image_file=self.root/('public-image-review-'+uuid.uuid4().hex+suffix)
                 image_file.write_bytes(image); image_file.chmod(0o600)
             response=await asyncio.wait_for(self.context.llm_generate(
                 chat_provider_id='deepseek/deepseek-flash',prompt=prompt,
@@ -230,7 +235,18 @@ class CompanionPhone(Star):
             if self.diary_ready() and time.time()-last_diary_check>=60:
                 last_diary_check=time.time()
                 try:
-                    await self.books.reflect(self.diary_model,self.autonomy.recent())
+                    from .compat import brain
+                    coordinator = brain(self.context)
+                    worker = lambda: self.books.reflect(self.diary_model,self.autonomy.recent())
+                    if coordinator:
+                        # Evidence collection is maintenance; deciding to write is
+                        # an advertised opportunity, not another independent clock.
+                        self.books.collect(self.autonomy.recent())
+                        self.books.collect_self_experience()
+                        if self.books.ready_for_reflection():
+                            coordinator.offer('diary',worker,
+                                check=lambda:self.diary_ready() and self.books.ready_for_reflection())
+                    # No Brain: preserve due diary state for the next opportunity.
                 except Exception as exc:
                     logger.warning('Daily diary deferred after %s',type(exc).__name__)
             if not path.exists(): continue
@@ -242,14 +258,21 @@ class CompanionPhone(Star):
                     if not self.diary_ready():
                         report={'result':'deferred_until_awake'}
                     else:
-                        await self.books.reflect(self.diary_model,self.autonomy.recent())
-                        report={'public_entries':len(self.books.read('public',1000)),
+                        from .compat import brain
+                        coordinator=brain(self.context)
+                        admitted=bool(coordinator and await coordinator.run('diary',lambda:self.books.reflect(self.diary_model,self.autonomy.recent()),requested=True))
+                        report={'admitted':admitted,'public_entries':len(self.books.read('public',1000)),
                                 'private_entries':len(self.books.read('private',1000))}
                 elif request.get('kind')=='explain_missing_public':
                     report=await self.books.explain_missing_public(request.get('day'))
                 elif request.get('kind')=='rewrite_missing_public':
-                    report=(await self.books.rewrite_missing_public(self.diary_model,request.get('day'))
-                            if self.diary_ready() else {'result':'deferred_until_awake'})
+                    from .compat import brain
+                    coordinator=brain(self.context)
+                    report={'result':'deferred'}
+                    async def rewrite():
+                        nonlocal report
+                        report=await self.books.rewrite_missing_public(self.diary_model,request.get('day'))
+                    if self.diary_ready() and coordinator:await coordinator.run('diary',rewrite,requested=True)
                 elif request.get('kind')=='media_validation':
                     import io
                     from PIL import Image,ImageDraw
@@ -299,6 +322,18 @@ class CompanionPhone(Star):
         if not identifier:
             identifier=uuid.uuid4().hex;event.set_extra('companion_activity_task_id',identifier)
         ledger.record(action,origin='owner_requested',key=identifier)
+        try:
+            from .compat import brain
+            coordinator=brain(self.context)
+            if coordinator:
+                from .activity import EVENTS
+                from importlib import import_module
+                prefix=coordinator.__class__.__module__.rsplit('.',1)[0]
+                current=import_module(prefix+'.self_activity').CURRENT_TOOL.get()
+                episode,name=(current[0],current[1]) if current else (identifier,action)
+                coordinator.remember(episode,name,'confirmed_execution',scope='contact:'+coordinator.scope(self.owner),
+                    note=EVENTS.get(action,('','','',''))[3],source='phone_receipt',ref=coordinator.activities.turn(event))
+        except Exception:pass
 
     def exploration_goals(self, umo):
         if umo != self.umo or not self.config.get('enabled', True):
@@ -307,6 +342,9 @@ class CompanionPhone(Star):
 
     def recent_activity(self, *, compact=False):
         activity=self.autonomy.context(compact=compact)
+        experiences=getattr(self,'self_experience',None)
+        if experiences:
+            activity+='\n'+experiences.context()
         shared=[{k:r.get(k) for k in ('at','caption','asset_id','message_id')} for r in self.outbound.state['shares'][-3:] if r.get('result')=='sent']
         if shared: activity+='\n已实际通过QQ分享给管理员的内容（只有sent回执才算已发出）：'+json.dumps(shared,ensure_ascii=False)
         compat=getattr(self,'social_compat',None)
@@ -318,6 +356,10 @@ class CompanionPhone(Star):
                 activity += ('\n<companion_common_cognition>\n'+common+'\n</companion_common_cognition>'
                              if compact else '\n'+common)
         return activity
+
+    def self_experience_evidence(self):
+        experiences=getattr(self,'self_experience',None)
+        return experiences.snapshot() if experiences else {}
 
     def public_reading_context(self):
         rows=[{k:r.get(k) for k in ('id','app','time','note')} for r in self.autonomy.recent()
@@ -459,7 +501,7 @@ class CompanionPhone(Star):
                 raise PhoneError('尚未允许将手机截图交给模型识别，暂不执行模型手机操作；手动 /手机截图 仍可使用。')
             self.phone.ready()
             count=int(event.get_extra('companion_phone_actions',0))
-            if count>=12:
+            if not q.enabled(self.config) and count>=12:
                 raise PhoneError('本次手机任务操作已达上限，请先报告进度，等待管理员下一条指令。')
             event.set_extra('companion_phone_actions',count+1)
 
@@ -495,8 +537,8 @@ class CompanionPhone(Star):
     async def inject_phone_context(self,event,req):
         await self._inject_phone_context(event,req)
         compat=getattr(self,'social_compat',None)
+        if compat:compat.filter_tools(event,req)
         if compat and self.owner_event(event):
-            compat.filter_tools(event,req)
             req.extra_user_content_parts.append(TextPart(text=PUBLIC_OWNER_INTRO+SOCIAL_POLICY).mark_as_temp())
 
     async def _inject_phone_context(self,event,req):
@@ -540,9 +582,9 @@ class CompanionPhone(Star):
             guard()
             if action not in ('lookup','search','read','review'):raise PhoneError('只支持本地检索、公开搜索、读取文本网页或查看知识版本。')
             count=int(event.get_extra('companion_reading_calls',0))
-            if count>=3:raise PhoneError('本轮公开阅读已达上限，请按已有资料回答。')
+            if not q.enabled(self.config) and count>=3:raise PhoneError('本轮公开阅读已达上限，请按已有资料回答。')
             event.set_extra('companion_reading_calls',count+1)
-            if count+1>=3:
+            if not q.enabled(self.config) and count+1>=3:
                 event.set_extra('companion_reading_done_this_turn',True)
                 request=event.get_extra('companion_reading_request',None)
                 if request is not None and request.func_tool:request.func_tool.remove_tool('companion_public_read')
@@ -593,7 +635,7 @@ class CompanionPhone(Star):
         '''
         if not self.owner_event(event) or not self.config.get('enabled',True): return result('只接受管理员指定私聊。',True)
         count=int(event.get_extra('companion_media_calls',0))
-        if count>=8: return result('本轮图片操作已达上限，先正常回复。',True)
+        if not q.enabled(self.config) and count>=8: return result('本轮图片操作已达上限，先正常回复。',True)
         event.set_extra('companion_media_calls',count+1)
         try:
             async with self.media.lock:
@@ -728,7 +770,7 @@ class CompanionPhone(Star):
             y1(number): 起点纵坐标0–1000整数。
             x2(number): 终点横坐标0–1000整数。
             y2(number): 终点纵坐标0–1000整数。
-            duration_ms(number): 滑动时长100–2000毫秒整数。
+            duration_ms(number): 滑动时长100–1500毫秒整数。
             repeat(number): 连续滑动次数1至5，默认1；略过不感兴趣内容可选2至5。
         '''
         return await self.invoke(event,lambda:self.phone.swipe(x1,y1,x2,y2,duration_ms,repeat=repeat),True,activity='phone_scroll')
@@ -888,7 +930,7 @@ class CompanionPhone(Star):
     async def sharing_resume(self,event:AstrMessageEvent):
         if self.owner_event(event):
             self.outbound.state['paused']=False; self.outbound.save()
-            yield event.plain_result('已恢复自主分享有趣内容，每天最多3条。'); event.stop_event()
+            yield event.plain_result('已恢复自主分享有趣内容，项目次数额度不限。' if q.enabled(self.config) else '已恢复自主分享有趣内容，每天最多3条。'); event.stop_event()
 
     @filter.command('暂停空间')
     async def qzone_pause(self,event:AstrMessageEvent):
@@ -923,6 +965,11 @@ class CompanionPhone(Star):
             if last['focus']:text+='\n留下的关注点：'+last['focus']
         for row in state['goals'][:3]:text+='\n未完问题：'+row['question']
         for row in state['trials'][:3]:text+='\n正在尝试：'+row['direction']+'；'+row['practice']
+        resource=state.get('resources',{})
+        if resource:text+='\n今日自主模型请求已预留'+str(resource['used'])+('次；项目额度不限。' if resource['limit'] is None else '/'+str(resource['limit'])+'次，剩余'+str(resource['remaining'])+'次。')
+        text+='\n公共工作空间已有'+str(len(state.get('workspace',[])))+'份近期作品；草稿不代表已验证知识或真实实践。'
+        practice=self.thinking.practice.status()
+        if practice['enabled']:text+='\n隔离Python练习今日已预留'+str(practice['used'])+('次；次数不限；' if practice['limit'] is None else '/'+str(practice['limit'])+'次；')+('执行服务入口可用。' if practice['worker_socket_present'] else '执行服务暂不可达。')
         text+='\n想法不是已完成的行动；发展方向由自己选择，不以用户提出要求为前提。'
         yield event.plain_result(text);event.stop_event()
 

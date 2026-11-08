@@ -1,3 +1,4 @@
+from . import quota as q
 """Private intake gate survives plugin reload through the owning Context.
 
 The gate holds raw messages in the existing durable inbox. It never changes a
@@ -21,7 +22,7 @@ class SectionConfig:
         self.config, self.section = config, section
 
     def get(self, key, default=None):
-        common = key in ('owner_qq', 'platform_id', 'bot_qq')
+        common = key in ('owner_qq', 'platform_id', 'bot_qq','unlimited_quotas')
         return self.config.get(key if common else self.section + '_' + key, default)
 
 
@@ -41,11 +42,25 @@ class ComponentContext:
     def __getattr__(self, name):
         return getattr(self.context, name)
 
+    async def llm_generate(self,*args,**kwargs):
+        brain=getattr(self.owner,'brain',None)
+        call=lambda:self.context.llm_generate(*args,**kwargs)
+        if brain and not brain.closed:return await brain.observe_model('chat_component',call)
+        return await call()
+
+    async def tool_loop_agent(self,**kwargs):
+        brain=getattr(self.owner,'brain',None)
+        if brain and not brain.closed:
+            from .activity_hooks import observed_agent
+            return await observed_agent(brain,self.context.tool_loop_agent,kwargs)
+        return await self.context.tool_loop_agent(**kwargs)
+
 
 class ConsumerContext:
     """Adapt already-running memory/phone instances without restarting their jobs."""
-    def __init__(self, context):
+    def __init__(self, context, source='companion'):
         self._companion_chat_consumer_base = getattr(context, '_companion_chat_consumer_base', context)
+        self.source=source
 
     def get_registered_star(self, name):
         context = self._companion_chat_consumer_base
@@ -62,12 +77,33 @@ class ConsumerContext:
     def __getattr__(self, name):
         return getattr(self._companion_chat_consumer_base, name)
 
+    async def llm_generate(self,*args,**kwargs):
+        context=self._companion_chat_consumer_base
+        lookup=getattr(context,'get_registered_star',None)
+        meta=lookup('astrbot_plugin_companion_chat') if lookup else None
+        owner=getattr(meta,'star_cls',None) if meta and getattr(meta,'activated',False) else None
+        brain=getattr(owner,'brain',None) if owner and getattr(owner,'ready',False) else None
+        call=lambda:context.llm_generate(*args,**kwargs)
+        if brain and not brain.closed:return await brain.observe_model(self.source,call)
+        return await call()
+
+    async def tool_loop_agent(self,**kwargs):
+        context=self._companion_chat_consumer_base
+        lookup=getattr(context,'get_registered_star',None)
+        meta=lookup('astrbot_plugin_companion_chat') if lookup else None
+        owner=getattr(meta,'star_cls',None) if meta and getattr(meta,'activated',False) else None
+        brain=getattr(owner,'brain',None) if owner and getattr(owner,'ready',False) else None
+        if brain and not brain.closed:
+            from .activity_hooks import observed_agent
+            return await observed_agent(brain,context.tool_loop_agent,kwargs)
+        return await context.tool_loop_agent(**kwargs)
+
 
 def bind_live_consumers(context):
     for suffix in ('memory', 'phone', 'breeze'):
         meta = context.get_registered_star('astrbot_plugin_companion_' + suffix)
         if meta and meta.activated and meta.star_cls:
-            meta.star_cls.context = ConsumerContext(meta.star_cls.context)
+            meta.star_cls.context = ConsumerContext(meta.star_cls.context,suffix)
 
 
 def coroutine_frames(task):

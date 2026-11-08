@@ -46,7 +46,7 @@ class ConfigTests(unittest.TestCase):
         entries = [m for m in star_map if 'astrbot_plugin_companion_chat' in m]
         self.assertEqual(entries, ['astrbot_plugin_companion_chat.main'])
         hooks = [h for h in star_handlers_registry if 'astrbot_plugin_companion_chat' in h.handler_module_path]
-        self.assertEqual(len(hooks), 31)
+        self.assertEqual(len(hooks), 36)
         self.assertTrue(all(h.handler_module_path == 'astrbot_plugin_companion_chat.main' for h in hooks))
 
     def test_component_context_does_not_mutate_global_registry(self):

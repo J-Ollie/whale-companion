@@ -130,5 +130,26 @@ class DialogueTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('保证',response.completion_text)
         self.assertEqual(self.active.context.llm_generate.await_count,2)
 
+    async def test_incident_overstatement_cannot_pass_boolean_approval(self):
+        with patch.object(grounding,'evidence',return_value={'own_outcomes':[{'state':'open','count':2}]}):
+            self.active.context.llm_generate.return_value=SimpleNamespace(completion_text=json.dumps({'supported':True,'safe_text':'真烦，你快帮我看看。'},ensure_ascii=False))
+            response=self.response('一直卡在校验上，今天什么都没干。真烦，你快帮我看看。')
+            await grounding.audit(self.active,self.event,response)
+        self.assertEqual(response.completion_text,'真烦，你快帮我看看。')
+
+    async def test_rewrite_cannot_smuggle_continuous_outage_as_safe_text(self):
+        with patch.object(grounding,'evidence',return_value={'own_outcomes':[{'state':'open','count':2}]}):
+            self.active.context.llm_generate.side_effect=[
+                SimpleNamespace(completion_text=json.dumps({'supported':False,'text':'一直卡在校验上。','safe_text':'今天什么都没干。'},ensure_ascii=False)),
+                SimpleNamespace(completion_text='{"supported":true}')]
+            response=self.response('这次没通过校验。真烦，你快帮我看看。')
+            await grounding.audit(self.active,self.event,response)
+        self.assertNotIn('一直卡',response.completion_text);self.assertNotIn('什么都没干',response.completion_text)
+        self.assertEqual(self.active.context.llm_generate.await_count,2)
+
+    def test_incident_guard_does_not_classify_emotion_or_negated_outage_as_outage(self):
+        for text in ('这事让我一直觉得烦。','不是一直卡着，只有两次没过。','今天没做什么特别的。','刚才又失败了。'):
+            self.assertFalse(grounding.unsupported_outage_claim(text),text)
+
 
 if __name__=='__main__':unittest.main()

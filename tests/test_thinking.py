@@ -77,6 +77,30 @@ class ThinkingTests(unittest.IsolatedAsyncioTestCase):
         ids=[r['id'] for r in self.t.store.rows('receipts')]
         return trial,ids
 
+    async def test_brain_start_skips_only_reminder_time_and_still_thinks_first(self):
+        self.config['self_directed_enabled']=True
+        self.a.rhythm.state['next_decision']=NOW+3600
+        self.assertFalse(self.a.due(NOW));self.assertTrue(self.a.due(NOW,by_brain=True))
+        self.responses(self.thought(),self.decision())
+        await self.a._consider_session(False,'',by_brain=True)
+        self.assertEqual(self.context.llm_generate.await_count,2)
+        self.assertEqual(self.context.llm_generate.await_args_list[0].kwargs['system_prompt'],THINK)
+        self.a.phone.key.assert_not_called()
+    def test_brain_start_keeps_sleep_quiet_pause_and_decision_quota(self):
+        self.config['self_directed_enabled']=True
+        self.a.rhythm.state['next_decision']=NOW+3600
+        self.a.state['last_user_at']=NOW
+        self.assertFalse(self.a.due(NOW,by_brain=True));self.a.state['last_user_at']=NOW-1000
+        self.a.state['paused']=True
+        self.assertFalse(self.a.due(NOW,by_brain=True));self.a.state['paused']=False
+        self.a.rhythm.state.update(mode='asleep',until=NOW+3600)
+        self.assertFalse(self.a.due(NOW,by_brain=True));self.a.rhythm.state.update(mode='awake',until=0)
+        self.a.rhythm.state.update(decision_day=datetime.fromtimestamp(NOW,TZ).date().isoformat(),decisions=12)
+        self.assertFalse(self.a.due(NOW,by_brain=True))
+    def test_brain_start_keeps_shared_model_request_budget(self):
+        self.config.update(self_directed_enabled=True,autonomy_daily_model_calls=1)
+        self.t.resources.reserve()
+        self.assertFalse(self.a.due(NOW,by_brain=True))
     async def test_thought_finishes_before_decision_and_no_tools_in_first_stage(self):
         observed=[]
         async def generate(**kw):
@@ -103,6 +127,68 @@ class ThinkingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.llm_generate.await_count,1)
         self.assertFalse(self.t.store.rows('goals'))
         self.assertFalse(self.t.store.rows('trials'))
+
+    async def test_invalid_growth_field_gets_one_budgeted_repair_before_any_action(self):
+        calls = 0
+        async def generate(**kw):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                value = self.thought()
+            elif calls == 2:
+                value = self.decision(growth_action='start|continue')
+            else:
+                self.assertFalse(self.t.store.rows('goals'))
+                self.assertFalse(self.t.store.rows('trials'))
+                value = {'growth_action':'none','activity':'browse','app':'unauthorized.package'}
+            return SimpleNamespace(completion_text=json.dumps(value))
+        self.context.llm_generate.side_effect = generate
+        await self.a.consider()
+        run = self.t.store.rows('runs')[0]
+        self.assertEqual((run['status'],run['calls'],run['activity']), ('completed',3,'idle'))
+        self.a.phone.open_app.assert_not_called()
+        with self.t.store.connect() as db:
+            events = [r['kind'] for r in db.execute('SELECT kind FROM process_events ORDER BY id')]
+        self.assertEqual(events.count('validation_failed'), 1)
+
+    async def test_repeated_invalid_growth_stops_with_specific_safe_diagnostic(self):
+        self.a.outcome_callback = Mock()
+        self.responses(self.thought(), self.decision(growth_action='PRIVATE_BAD_ACTION'), {'growth_action':None})
+        await self.a.consider()
+        self.assertEqual(self.context.llm_generate.await_count, 3)
+        self.assertEqual(self.a.state['last_failure']['code'], 'invalid_development_action')
+        self.assertEqual(self.t.store.rows('runs')[0]['status'], 'invalid_output')
+        self.assertFalse(self.t.store.rows('goals'))
+        self.assertFalse(self.t.store.rows('trials'))
+        self.a.outcome_callback.assert_called_once_with('autonomy','activity','growth_action_invalid',error_type='ValueError')
+        with self.t.store.connect() as db:
+            events = [r['payload'] for r in db.execute('SELECT payload FROM process_events')]
+        self.assertNotIn('PRIVATE_BAD_ACTION', ''.join(events))
+        self.assertIn('invalid_development_action', events[-1])
+
+    async def test_growth_repair_does_not_expand_the_shared_model_budget(self):
+        self.config['thinking_model_calls'] = 2
+        self.responses(self.thought(), self.decision(growth_action='not_allowed'))
+        await self.a.consider()
+        self.assertEqual(self.context.llm_generate.await_count, 2)
+        self.assertEqual(self.t.store.rows('runs')[0]['status'], 'invalid_output')
+        self.assertFalse(self.t.store.rows('goals'))
+
+    async def test_arrival_during_growth_repair_interrupts_before_execution(self):
+        values = iter([self.thought(), self.decision(growth_action=[]), {'growth_action':'none'}])
+        calls = 0
+        async def generate(**kw):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                self.a.state['last_user_at'] = NOW
+            return SimpleNamespace(completion_text=json.dumps(next(values)))
+        self.context.llm_generate.side_effect = generate
+        with self.assertRaises(asyncio.CancelledError):
+            await self.a.consider()
+        self.assertEqual(self.t.store.rows('runs')[0]['status'], 'interrupted')
+        self.assertFalse(self.t.store.rows('goals'))
+        self.a.phone.open_app.assert_not_called()
 
     async def test_first_stage_tool_like_fields_never_execute(self):
         self.responses({'activity':'browse','app':'com.coolapk.market','growth_action':'start'})

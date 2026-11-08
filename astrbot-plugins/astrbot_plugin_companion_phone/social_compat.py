@@ -7,14 +7,17 @@ import inspect
 import json
 import re
 import time
-from astrbot.core.agent.tool import ToolSet
+from astrbot.core.agent.tool import ToolSet,FunctionTool
 from astrbot.core.provider.register import llm_tools
 from .social_policy import load_json
 from astrbot.api.message_components import Image
 
 ULTRA='astrbot_plugin_qzone_ultra'
 PROFILE='astrbot_plugin_qqprofile'
-PROFILE_TOOLS={'qqprofile_set_avatar','qqprofile_set_nickname','qqprofile_set_signature','qqprofile_set_status'}
+PROFILE_EX='astrbot_plugin_qqprofile_ex'
+LEGACY_PROFILE_TOOLS={'qqprofile_set_avatar','qqprofile_set_nickname','qqprofile_set_signature','qqprofile_set_status'}
+EX_PROFILE_TOOLS={'change_my_signature','change_my_status','change_my_nickname'}
+PROFILE_TOOLS=LEGACY_PROFILE_TOOLS|EX_PROFILE_TOOLS
 
 class SocialCompat:
     def __init__(self,phone):
@@ -35,12 +38,35 @@ class SocialCompat:
 
     def pause(self,value):self.state['paused']=bool(value);self.save()
 
+    def trace(self,action,result):
+        try:
+            from .compat import brain
+            coordinator=brain(self.phone.context)
+            if coordinator:
+                current=self.state['actions'][-1] if self.state.get('actions') else {}
+                key=current.get('hash') if current.get('action')==action else ''
+                episode='social:'+str(current.get('at',time.time()))+':'+(key or action)
+                stage={'reserved':'attempted','api_returned':'read_returned','uncertain':'uncertain',
+                       'api_acknowledged':'api_acknowledged','not_executed':'blocked','plugin_returned':'plugin_returned'}.get(result)
+                from importlib import import_module
+                prefix=coordinator.__class__.__module__.rsplit('.',1)[0]
+                current_tool=import_module(prefix+'.self_activity').CURRENT_TOOL.get()
+                name=action
+                if current_tool:episode,name,_=current_tool
+                if stage:coordinator.remember(episode,name,stage,scope='public',source='social_receipt',note=current.get('public_note',''))
+        except Exception:pass
+        thinker=getattr(self.phone,'thinking',None)
+        if thinker and getattr(thinker,'social_trace_active',False):
+            record=getattr(thinker,'record_process',None)
+            if callable(record):record('social_action',{'action':action,'result':result})
+
     def plugin(self,name):
         meta=self.phone.context.get_registered_star(name)
         return meta.star_cls if meta and meta.activated else None
 
     def external(self):return self.plugin(ULTRA)
-    def available(self):return self.external() is not None
+    def profile(self):return self.plugin(PROFILE_EX) or self.plugin(PROFILE)
+    def available(self):return self.external() is not None or self.profile() is not None
     def full(self):return bool(self.phone.config.get('social_full_autonomy_enabled',False))
 
     def check(self):
@@ -73,7 +99,10 @@ class SocialCompat:
         async def request(method,path,**kwargs):
             try:
                 if path in ('/feeds','/detail','/visitors','/post','/comment','/reply','/like','/delete'):self.check()
-                if path not in ('/post','/comment','/reply','/like','/delete'):return await original(method,path,**kwargs)
+                if path not in ('/post','/comment','/reply','/like','/delete'):
+                    value=await original(method,path,**kwargs)
+                    if path in ('/feeds','/detail','/visitors'):self.trace(path,'api_returned')
+                    return value
                 async with self.lock:
                     self.check();body=kwargs.get('json_body') or {}
                     if body.get('sync_weibo'):raise ValueError('QQ空间自主授权不包含微博。')
@@ -84,13 +113,15 @@ class SocialCompat:
                         raise ValueError('相同操作结果尚未确认，不自动重发；可以处理其他不同内容。')
                     row={'at':time.time(),'action':path,'hash':digest,'result':'reserved'}
                     self.state['actions']=self.state['actions'][-199:]+[row];self.save();kwargs['retry_on_timeout']=False
+                    self.trace(path,'reserved')
                     try:payload=await original(method,path,**kwargs)
                     except BaseException as exc:
-                        row['result']='uncertain';self.save()
+                        row['result']='uncertain';self.save();self.trace(path,'uncertain')
                         report=getattr(self.phone,'report_own_outcome',None)
                         if callable(report):report('social','operate','social_unconfirmed',error_type=type(exc).__name__)
                         raise
                     row['result']='api_acknowledged'
+                    self.trace(path,'api_acknowledged')
                     if isinstance(payload,dict):row['fid']=str(payload.get('fid') or payload.get('tid') or '')
                     self.save()
                     report=getattr(self.phone,'report_own_outcome',None)
@@ -108,11 +139,16 @@ class SocialCompat:
 
     def wrap_profile(self,tool):
         clone=copy.copy(tool);original=tool.handler
+        if tool.name in EX_PROFILE_TOOLS:
+            clone.description='自主决定是否修改自己的QQ资料；由统一大脑按真实状态决定，可不修改。内容必须可公开；回执不等于对外可见。'
         if tool.name=='qqprofile_set_avatar':
             clone.parameters=copy.deepcopy(tool.parameters or {'type':'object','properties':{}})
             clone.parameters.setdefault('properties',{})['image_id']={'type':'string','description':'可选：已授权公开图库media:编号；自行选图时传入，省略则用当前消息附件。'}
         async def guarded(event,**kwargs):
             self.check()
+            from .social_autonomy import SocialEvent
+            internal=isinstance(event,SocialEvent) and event.get_extra('companion_self_social',False)
+            if not internal and not self.phone.owner_event(event):raise ValueError('QQ资料操作仅允许管理员委托或大脑自身活动。')
             image_id=kwargs.pop('image_id','')
             if image_id:
                 _,path=self.phone.media.asset(image_id,share=True,public=True)
@@ -121,15 +157,29 @@ class SocialCompat:
                 event=copy.copy(event);event.message_obj=copy.copy(event.message_obj)
                 data='base64://'+base64.b64encode(path.read_bytes()).decode()
                 event.message_obj.message=[Image(file=data,url=data)]
-            for key in ('longnick','nickname'):
+            for key in ('longnick','nickname','signature','status','status_name'):
                 if kwargs.get(key):await self.review(kwargs[key])
             self.check()
             async with self.lock:
                 self.check()
                 digest=hashlib.sha256(json.dumps([tool.name,kwargs,image_id],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
                 if any(r.get('hash')==digest and r['result'] in ('reserved','uncertain') for r in self.state['actions']):raise ValueError('相同资料修改结果尚未确认，不自动重复。')
-                row={'at':time.time(),'action':tool.name,'hash':digest,'result':'reserved'}
+                note='；'.join(str(kwargs[k]) for k in ('longnick','nickname','signature','status','status_name') if kwargs.get(k))
+                if image_id:note='头像：'+image_id
+                row={'at':time.time(),'action':tool.name,'hash':digest,'result':'reserved','public_note':note}
                 self.state['actions']=self.state['actions'][-199:]+[row];self.save()
+                self.trace(tool.name,'reserved')
+                # Observe real API calls rather than trusting a success sentence.
+                from .social_autonomy import SocialClient
+                adapter=self
+                class ReceiptClient(SocialClient):
+                    async def call_action(client,action,**params):
+                        client.guard()
+                        if action.startswith('set_'):row['write_attempted']=True
+                        value=await super().call_action(action,**params)
+                        if action.startswith('set_'):row['api_acknowledged']=True
+                        return value
+                event=copy.copy(event);event.bot=ReceiptClient(event.bot,adapter.check)
                 try:
                     value=original(event,**kwargs)
                     if inspect.isasyncgen(value):
@@ -139,24 +189,43 @@ class SocialCompat:
                             parts.append(''.join(getattr(c,'text','') for c in chain) if chain is not None else str(result))
                         value='\n'.join(parts)
                     elif inspect.isawaitable(value):value=await value
-                except BaseException:row['result']='uncertain';self.save();raise
-                row['result']='plugin_returned';self.save();return value
+                except BaseException as exc:
+                    row['result']='uncertain' if row.get('write_attempted') else 'not_executed'
+                    self.save();self.trace(tool.name,row['result'])
+                    report=getattr(self.phone,'report_own_outcome',None)
+                    if tool.name in EX_PROFILE_TOOLS and row.get('write_attempted') and callable(report):
+                        report('social','operate','social_unconfirmed',error_type=type(exc).__name__)
+                    raise
+                row['result']='api_acknowledged' if row.get('api_acknowledged') else 'not_executed'
+                self.save();self.trace(tool.name,row['result'])
+                report=getattr(self.phone,'report_own_outcome',None)
+                if tool.name in EX_PROFILE_TOOLS and row.get('api_acknowledged') and callable(report):
+                    report('social','operate','',recovery='later_same_kind_succeeded')
+                return value
         clone.handler=guarded;return clone
 
     def tools(self,base=None):
-        tools=ToolSet(list(base or []));active_names={n for n in (ULTRA,PROFILE) if self.plugin(n)}
+        tools=ToolSet([t for t in (base or []) if t.name not in PROFILE_TOOLS]);active_names={n for n in (ULTRA,PROFILE,PROFILE_EX) if self.plugin(n)}
+        profile_names=EX_PROFILE_TOOLS if PROFILE_EX in active_names else LEGACY_PROFILE_TOOLS if PROFILE in active_names else set()
         for tool in llm_tools.func_list:
             if not getattr(tool,'active',True):continue
-            if (ULTRA in active_names and tool.name.startswith('qzone_')) or (PROFILE in active_names and tool.name in PROFILE_TOOLS):
+            if (ULTRA in active_names and tool.name.startswith('qzone_')) or tool.name in profile_names:
                 tools.add_tool(self.wrap_profile(tool) if tool.name in PROFILE_TOOLS else tool)
+        plugin=self.plugin(PROFILE_EX)
+        if plugin and callable(getattr(plugin,'set_avatar',None)):
+            avatar=FunctionTool(name='qqprofile_set_avatar',description='选择已授权公开图库中的图片作为自己的QQ头像。',
+                parameters={'type':'object','properties':{'image_id':{'type':'string'}},'required':['image_id']},handler=plugin.set_avatar)
+            tools.add_tool(self.wrap_profile(avatar))
         return tools
 
     def filter_tools(self,event,req):
         self.bind()
+        # Native tools are globally registered by Ex; strip them for every contact.
+        base=[t for t in (req.func_tool or []) if t.name not in PROFILE_TOOLS|{'qqprofile_switch_persona','qqprofile_list_personas'}]
+        req.func_tool=ToolSet(base)
         if self.phone.owner_event(event):
-            base=[t for t in (req.func_tool or []) if t.name not in ('qqprofile_switch_persona','qqprofile_list_personas')]
             req.func_tool=self.tools(base)
-        return self.available() or self.plugin(PROFILE) is not None
+        return self.available()
 
     def activity_context(self):
         return 'QQ社交接口记录（api_acknowledged是接口回执，不是对外可见性验收）：'+json.dumps(self.state['actions'][-5:],ensure_ascii=False)
@@ -168,6 +237,8 @@ class SocialCompat:
             path=self.phone.root/'social-compat-status.json';temp=path.with_suffix('.tmp')
             thinker=getattr(self.phone,'thinking',None)
             temp.write_text(json.dumps({'at':time.time(),'qzone_ultra_active':plugin is not None,
+                'profile_plugin':PROFILE_EX if self.plugin(PROFILE_EX) else PROFILE if self.plugin(PROFILE) else '',
+                'profile_tools':[t.name for t in self.tools() if t.name in PROFILE_TOOLS],
                 'controller_guarded':bool(plugin and getattr(plugin.controller,'_companion_social_adapter',None) is self),
                 'full_social_autonomy':self.full(),'autonomy_worker_ready':bool(autonomy and not autonomy.closed),
                 'thinking_ready':bool(thinker and thinker.enabled()),

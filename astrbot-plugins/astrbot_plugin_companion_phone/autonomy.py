@@ -1,3 +1,5 @@
+from . import diagnostics
+from . import quota as q
 """Model-decided, allowlisted, read-only phone browsing. No messaging API."""
 import asyncio
 import hashlib
@@ -30,8 +32,9 @@ RESULT_LABELS={'waiting':'等待合适时机','checking':'正在考虑','offline
     'resting':'选择休息','sleeping':'选择睡眠','reflected':'整理了自己的真实经历','daily_limit':'今日手机浏览次数已用完',
     'no_content':'只有加载或受限页面，未读到内容','qzone_considered':'自主考虑了空间动态',
     'navigation_stalled':'连续操作未观察到界面变化，本次已停止'}
-RESULT_LABELS.update(web_read='已读取公开网页文本', web_no_progress='读到了网页，但没有可记录的新进展',
-    web_unavailable='公开内容暂时无法取得', web_limited='本次未开始公开阅读')
+RESULT_LABELS.update(brain_unavailable='统一决策暂不可用，未执行',brain_deferred='其他任务或前台活动占用，未执行',web_read='已读取公开网页文本', web_no_progress='读到了网页，但没有可记录的新进展',
+    web_unavailable='公开内容暂时无法取得', web_limited='本次未开始公开阅读',
+    model_daily_limit='今日自主模型预算已用完',workspace_done='已处理自己的草稿',lookup_done='已查阅本地资料')
 
 
 def json_object(raw):
@@ -94,10 +97,10 @@ class AutonomousBrowser:
         return enabled_apps(self.config)
 
     def daily_limit(self):
-        value=int(self.config.get('autonomous_daily_limit',0))
+        value=0 if q.enabled(self.config) else int(self.config.get('autonomous_daily_limit',0))
         return value if value>0 else None
 
-    def due(self,now,force=False):
+    def due(self,now,force=False,*,by_brain=False):
         local=datetime.fromtimestamp(now,TZ)
         count=self.state['used'] if self.state['day']==local.date().isoformat() else 0
         limit=self.daily_limit()
@@ -110,6 +113,8 @@ class AutonomousBrowser:
             common=bool(self.config.get('enabled',True) and self.config.get('autonomous_enabled',False)
                 and not self.state['paused'] and not self.phone.state['paused']
                 and self.thinking.store.healthy and not self.thinking.store.meta('paused',False))
+            if common and self.config.get('self_directed_enabled',False) and self.thinking.resources.status()['remaining'] == 0:
+                return False
         if force:common=common and bool(self.config.get('autonomous_screen_consent',False) and self.apps)
         quiet=max(300,min(3600,int(self.config.get('autonomous_quiet_seconds',900))))
         if force:
@@ -118,6 +123,12 @@ class AutonomousBrowser:
                 return bool(common and self.rhythm.healthy and self.rhythm.state['mode'] not in ('asleep','resting'))
             return bool(common and 9<=local.hour<23)
         if self.rhythm:
+            # A self-chosen start skips only the reminder time. It is not an
+            # administrator force request and never skips sleep, quiet or quota.
+            if by_brain:
+                return bool(common and not force and self.thinking and self.thinking.enabled()
+                    and not self.closed and self.config.get('self_directed_enabled',False)
+                    and self.rhythm.available(now,True) and self.rhythm.state['mode']=='awake' and now-self.state['last_user_at']>=quiet)
             return bool(common and self.rhythm.available(now,force)
                                 and (force or now-self.state['last_user_at']>=quiet))
         return bool(common and 9<=local.hour<23 and (force or limit is None or count<limit)
@@ -245,10 +256,12 @@ class AutonomousBrowser:
                 self.exploration.observe(row,observation.get('exploration'),
                     selected=self.current_exploration,fallback=observation.get('continue_topic',''))
                 if self.thinking and self.thinking.run_id:self.thinking.observe(row)
+                elif self.thinking and row.get('public_content'):
+                    self.thinking.wakes.notify('public_source',hashlib.sha256(json.dumps(row,sort_keys=True).encode()).hexdigest())
 
-    async def _consider(self,force=False,task_text=''):
+    async def _consider(self,force=False,task_text='',*,by_brain=False):
         now=time.time()
-        if not self.due(now,force): return
+        if not self.due(now,force,**({'by_brain':True} if by_brain else {})): return
         thinker=self.thinking if self.thinking and self.thinking.enabled() and not force else None
         if thinker:
             social=getattr(thinker.phone,'social_autonomy',None)
@@ -256,7 +269,9 @@ class AutonomousBrowser:
         self.current_task=task_text[:2000] if force else ''
         self.current_exploration=''
         if self.rhythm:
-            if not force: self.rhythm.reserve_decision(now)
+            if not force:
+                self.rhythm.reserve_decision(now)
+                if thinker:thinker.wakes.consume()
             self.state['next_check']=self.rhythm.state['next_decision']
         else:
             self.state['next_check']=now+random.uniform(2700,6600)
@@ -280,6 +295,36 @@ class AutonomousBrowser:
             reading_offers=self.reading_options()
         else:
             choice=await self._legacy_choice(now,force,task_text)
+        await self._execute_choice(choice,snapshot,force)
+        if thinker:
+            from .self_directed import enabled
+            if enabled(thinker):
+                # A bounded continuation consumes the same request budget and day slot.
+                for _ in q.steps(8,self.config):
+                    if (thinker.private_run or thinker.last_choice.get('continue') is not True
+                            or self.state.get('last_result') not in ('web_read','viewed','workspace_done','lookup_done','practice_done')
+                            or not thinker.session or thinker.session.limit-thinker.session.calls < 2):
+                        break
+                    thinker.guard()
+                    choice=await thinker.continue_choice()
+                    await self._execute_choice(choice,snapshot,False)
+                thinker.wakes.schedule(choice,thinker.goal_id)
+                self.save()
+
+    async def _execute_choice(self,choice,snapshot,force=False):
+        thinker=self.thinking
+        traced=bool(thinker and thinker.run_id and choice.get('activity') not in ('lookup','workspace','practice'))
+        if traced:thinker.record_process('step_started',{'activity':choice.get('activity'),'app':self.apps.get(choice.get('app'))})
+        outcome='returned'
+        try:
+            return await self._execute_choice_impl(choice,snapshot,force)
+        except BaseException:
+            outcome='interrupted_or_failed';raise
+        finally:
+            if traced:thinker.record_process('step_finished',{'activity':choice.get('activity'),'status':outcome,'result':self.state.get('last_result')})
+
+    async def _execute_choice_impl(self,choice,snapshot,force=False):
+        reading_offers=self.reading_options() if not force else {}
         self.continue_allowed(snapshot,require_phone=False if self.rhythm else True)
         activity=choice.get('activity','browse' if choice.get('use') is True else 'idle')
         if force and activity!='browse':
@@ -308,6 +353,13 @@ class AutonomousBrowser:
                 self.state['last_result']='web_limited';self.save();return
             await self._read_public(selected,option,snapshot)
             return
+        if activity in ('workspace','lookup'):
+            self.state['last_result']='workspace_done' if activity=='workspace' else 'lookup_done'
+            self.save();return
+        if activity=='practice':
+            status=(self.thinking.workspace_result or {}).get('status')
+            self.state['last_result']='practice_unavailable' if status in ('unavailable','interrupted_unknown') else 'practice_done'
+            self.save();return
         if activity!='browse':
             self.state['last_result']='chose_not_to_play'
             self.save()
@@ -351,7 +403,7 @@ class AutonomousBrowser:
         if self.rhythm: self.rhythm.begin_browse()
         duration=max(30,min(600,int(self.config.get('autonomous_session_seconds',600))))
         try:
-            await asyncio.wait_for(self._browse(package,snapshot),timeout=duration)
+            await asyncio.wait_for(self._browse(package,snapshot),timeout=None if q.enabled(self.config) else duration)
         finally:
             if self.rhythm:
                 self.rhythm.finish_browse()
@@ -482,6 +534,10 @@ class AutonomousBrowser:
             self.reading.state['last_result']=self.state['last_result'];self.reading.save();self.save()
 
     async def _browse(self,package,snapshot):
+        with diagnostics.scope("trace"):
+            return await self._browse_diagnostic(package,snapshot)
+
+    async def _browse_diagnostic(self,package,snapshot):
         allowed=frozenset([package])
         self.skill_session=uuid.uuid4().hex;self.skill_attempt=None;self.skill_ui={}
         self.continue_allowed(snapshot)
@@ -502,8 +558,8 @@ class AutonomousBrowser:
         pending_share=None
         interactive=bool(self.config.get('autonomous_interactive',False))
         configured_views=int(self.config.get('autonomous_max_views',0))
-        limit=configured_views if configured_views>0 else None
-        observation_hint=f'最多{limit}次观察' if limit is not None else '观察次数不限，但本次总时长最多10分钟'
+        limit=configured_views if configured_views>0 and not q.enabled(self.config) else None
+        observation_hint='观察次数与项目时长额度不限，仍可自行结束，并响应暂停和新来信。' if q.enabled(self.config) else f'最多{limit}次观察' if limit is not None else '观察次数不限，但本次总时长最多10分钟'
         pending_navigation=None
         unchanged=0
         stalled=False
@@ -527,6 +583,8 @@ class AutonomousBrowser:
                 result='changed' if checked and before!=after else 'unchanged' if checked else 'unavailable'
                 unchanged=unchanged+1 if result=='unchanged' else 0
                 self.state['last_navigation_check']={'at':time.time(),'action':kind,'result':result,'unchanged_count':unchanged}
+                if self.thinking and self.thinking.run_id:
+                    self.thinking.record_process('observation',{'action':kind,'result':result,'note':'操作后的控件核对；变化不等于目标已完成。'})
                 navigation_note='\n上一操作的界面核对：'+result+'。changed仅指控件变化，不代表目标已完成；unchanged时换一种方法或结束，不能机械重复点按；unavailable不代表没有变化。'
                 pending_navigation=None
                 if unchanged>=2:
@@ -563,6 +621,8 @@ class AutonomousBrowser:
                     '"share_image":false,"like_state":"not_liked|liked|unknown","target_quote":"评论对象的原文片段，可空"}。'
                     '不要复述QQ私聊、号码、密钥、验证码。感想不是事实证明；兴趣由你自己慢慢形成。'
                     f'当前已观察{observations}次，{observation_hint}，可随时结束。')
+            if interactive and self.config.get('full_phone_access') is True:
+                prompt=prompt.replace('不能向别人发消息、普通发帖、关注、购买、删除或更改账号安全。评论只按实时权限说明。input只用于搜索框或Via浏览器地址栏，不能填写其他网页表单。','管理员已授权日常发送消息、评论、发帖和关注，input可用于已观察的普通非密码输入框。付款、删除清空和账号安全操作仍停止。不得向其他人泄露管理员记忆或他人私聊。')
             if self.thinking and self.thinking.run_id:prompt+=self.thinking.practice_context()
             if getattr(self,'current_task',''):
                 prompt+='\n这是管理员明确交代的任务，清醒且原门控允许时按任务目标操作，完成即stop，不转为随意浏览；若转入睡眠或休息，按原门控暂停：'+self.current_task
@@ -582,6 +642,11 @@ class AutonomousBrowser:
                 prompt+='\n视频应用中当前取得的是静态画面，不能声称听到音频、看完视频或理解了未观察的片段。'
             action=json_object(await self.model(prompt,jpg))
             self.continue_allowed(snapshot)
+            if self.thinking and self.thinking.run_id:
+                public=bool(self.apps.get(package) in PUBLIC_APPS and action.get('public_content') is True and action.get('page_type')=='content')
+                self.thinking.record_process('observation',{'app':self.apps.get(package),'page_type':action.get('page_type'),
+                    'action':action.get('action'),'note':safe_note(action.get('note')) if public else '已观察画面；非公共页面正文未保存。',
+                    'public_content':public})
             observations+=1
             page_type=action.get('page_type','unknown' if self.rhythm else 'content')
             if page_type!='content':
@@ -609,7 +674,10 @@ class AutonomousBrowser:
                 if limit is not None and observations>=limit: break
                 if action.get('action')=='save_image': continue
                 self.continue_allowed(snapshot)
-                if not await self.interactive_action(package,action): break
+                if self.thinking and self.thinking.run_id:self.thinking.record_process('step_started',{'activity':'browse','action':action.get('action')})
+                executed=await self.interactive_action(package,action)
+                if self.thinking and self.thinking.run_id:self.thinking.record_process('step_finished',{'activity':'browse','action':action.get('action'),'result':'operation_returned' if executed else 'not_executed'})
+                if not executed: break
                 if action.get('action') in ('tap','long_press','refresh','back'):
                     pending_navigation=(action['action'],fingerprint)
                 await asyncio.sleep(.9)
@@ -623,7 +691,9 @@ class AutonomousBrowser:
             count=action.get('scroll_count',1)
             if type(count) is not int or not 1<=count<=5:count=1
             options={'repeat':count} if count>1 else {}
+            if self.thinking and self.thinking.run_id:self.thinking.record_process('step_started',{'activity':'browse','action':'scroll'})
             await self.phone.swipe(500,y1,500,y2,550,allowed_packages=allowed,**options)
+            if self.thinking and self.thinking.run_id:self.thinking.record_process('step_finished',{'activity':'browse','action':'scroll','result':'operation_returned'})
             pending_navigation=('scroll',fingerprint)
             swipes+=count
             await asyncio.sleep(0.9)
@@ -639,6 +709,10 @@ class AutonomousBrowser:
             await self.books.reflect(self.diary_model,self.recent()[-1:])
 
     async def interactive_action(self,package,action):
+        with diagnostics.scope("step"):
+            return await self._interactive_action_diagnostic(package,action)
+
+    async def _interactive_action_diagnostic(self,package,action):
         allowed=frozenset([package]); kind=action.get('action')
         if kind in ('comment_input','comment_send') or (package=='com.tencent.mobileqq' and kind=='like'):return False
         if kind=='refresh':
@@ -651,7 +725,7 @@ class AutonomousBrowser:
             await self.phone._assert_foreground(allowed)
             field=await self.phone._input_field()
             label=' '.join(str(field.get(k,'')) for k in ('text','content-desc','resource-id'))
-            if not re.search(r'搜索|查找|search',label,re.I) and not (
+            if not self.config.get('full_phone_access',False) and not re.search(r'搜索|查找|search',label,re.I) and not (
                     package=='mark.via' and field.get('resource-id','').startswith('mark.via:id/')
                     and re.search(r'地址|网址|\burl\b|address|url[_-]?(?:input|bar|edit)',label,re.I)):
                 return False
@@ -669,13 +743,16 @@ class AutonomousBrowser:
         if package=='com.tencent.mobileqq' and (target.get('_qq_private_paid') is True or re.search(r'私密|黄钻|开通|会员|订阅',label) or (kind!='like' and target.get('checkable')=='true')):
             self.state['qq_comment_last_check']={'at':time.time(),'code':'private_or_paid_control','reason':'该目标是私密/会员/付费或复选控件，不按普通导航点击'}
             self.save();return False
-        if consuming_target(target) or target.get('_protected_navigation') is True or re.search(r'发送|发布|发表|关注|删除|清空|注销|send|publish|follow|delete',label,re.I): return False
+        if consuming_target(target):return False
+        if self.config.get('full_phone_access') is True:
+            if re.search(r'删除|清空|注销|密码|验证码|账号安全|delete|clear.data|password|security',label,re.I):return False
+        elif target.get('_protected_navigation') is True or re.search(r'发送|发布|发表|关注|删除|清空|注销|send|publish|follow|delete',label,re.I):return False
         if kind=='like':
             if not self.config.get('autonomous_like_consent',False): return False
             if action.get('like_state')!='not_liked' or target.get('selected')=='true' or target.get('checked')=='true': return False
             day=datetime.now(TZ).date().isoformat()
             used=self.state.get('likes_used',0) if self.state.get('likes_day')==day else 0
-            if used>=10: return False
+            if not q.enabled(self.config) and used>=10: return False
             self.state.update(likes_day=day,likes_used=used+1); self.save()
         elif action.get('intent') not in ('navigate','save_image'): return False
         attempt=None
@@ -689,16 +766,43 @@ class AutonomousBrowser:
 
 
     async def consider(self,force=False,task_text=''):
+        from .compat import brain
+        coordinator = brain(getattr(getattr(self.thinking,'phone',None),'context',None))
+        if coordinator is None:
+            self.state['last_result']='brain_unavailable'
+            self.save()
+            return False
+        if not force:
+            async def selected():
+                current=asyncio.current_task();self.session=current
+                try:await self._consider_session(False,'')
+                finally:
+                    if self.session is current:self.session=None
+            return coordinator.offer('autonomy',selected,check=lambda:self.due(time.time()) is True,
+                                     result=lambda:self.state.get('last_result','worker_returned'))
+        admitted=await coordinator.run('autonomy',lambda:self._consider_session(force,task_text),
+            result=lambda:self.state.get('last_result','worker_returned'),requested=True)
+        if not admitted:
+            self.state['last_result']='brain_deferred';self.save()
+        return admitted
+
+    async def _consider_session(self,force=False,task_text='',*,by_brain=False):
+        if by_brain and force:raise ValueError('brain_start_is_not_owner_force')
         thinker=self.thinking if self.thinking and self.thinking.enabled() and not force else None
         token=None
         if thinker:
             from .thinking import SESSION,Session
             thinker.snapshot=self.state['last_user_at']
-            thinker.session=Session(max(2,min(12,int(self.config.get('thinking_model_calls',6)))),thinker.guard)
+            thinker.session=Session(max(2,min(12,int(self.config.get('thinking_model_calls',6)))),thinker.guard,thinker.resources.reserve)
             token=SESSION.set(thinker.session)
         outcome='completed'
         try:
-            await self._consider(force,task_text)
+            from .self_directed import enabled
+            if thinker and enabled(thinker) and not q.enabled(self.config):
+                duration=max(30,min(1200,int(self.config.get('autonomy_session_seconds',600))))
+                await asyncio.wait_for(self._consider(force,task_text,**({'by_brain':True} if by_brain else {})),timeout=duration)
+            else:
+                await self._consider(force,task_text,**({'by_brain':True} if by_brain else {}))
         except asyncio.CancelledError:
             outcome='interrupted'
             self.state['last_result']='interrupted'
@@ -706,7 +810,7 @@ class AutonomousBrowser:
             raise
         except PhoneError as exc:
             outcome='blocked'
-            self.state['last_result']='device_unavailable_or_left_app'
+            self.state['last_result']='model_daily_limit' if str(exc)=='autonomy_daily_model_budget' else 'device_unavailable_or_left_app'
             self.state['last_failure']={'type':type(exc).__name__,'reason':str(exc)[:400],
                 'frames':[(Path(frame.filename).name,frame.name,frame.lineno)
                     for frame in traceback.extract_tb(exc.__traceback__)[-4:]]}
@@ -715,6 +819,7 @@ class AutonomousBrowser:
             outcome='invalid_output'
             self.state['last_result']='invalid_model_output'
             self.state['last_failure']={'type':type(exc).__name__,
+                'code':'invalid_development_action' if str(exc)=='invalid_development_action' else 'unclassified_validation',
                 'frames':[(Path(frame.filename).name,frame.name,frame.lineno)
                     for frame in traceback.extract_tb(exc.__traceback__)[-4:]]}
             self.save()
@@ -733,7 +838,10 @@ class AutonomousBrowser:
                 if result=='web_unavailable':report('reading','read','read_unavailable')
                 elif result=='offline':report('phone','operate','phone_offline')
                 elif outcome in ('blocked','invalid_output','timeout','error'):
-                    report('autonomy','activity','execution_timeout' if outcome=='timeout' else 'model_invalid' if outcome=='invalid_output' else 'execution_error',
+                    reason = ('execution_timeout' if outcome=='timeout' else 'growth_action_invalid'
+                              if self.state.get('last_failure',{}).get('code')=='invalid_development_action'
+                              else 'model_invalid' if outcome=='invalid_output' else 'execution_error')
+                    report('autonomy','activity',reason,
                         error_type=self.state.get('last_failure',{}).get('type',''))
                 elif result=='web_read':report('reading','read','',recovery='later_same_kind_succeeded')
                 elif result=='viewed':report('phone','operate','',recovery='later_same_kind_succeeded')
@@ -747,6 +855,9 @@ class AutonomousBrowser:
     async def run(self):
         while not self.closed:
             await asyncio.sleep(15)
+            if self.thinking and self.thinking.enabled() and self.thinking.store.healthy:
+                executor=getattr(self.phone,'executor',None)
+                self.thinking.wakes.tick(executor.online() if executor else None)
             if self.rhythm:
                 self.rhythm.advance()
                 self.state['next_check']=self.rhythm.state['next_decision']

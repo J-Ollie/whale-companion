@@ -1,3 +1,4 @@
+from . import quota as q
 """Give existing third-party tools an isolated, owner-delegated self-activity turn."""
 import asyncio
 import json
@@ -33,7 +34,8 @@ class SocialAutonomy:
     DEFAULT_INTERVALS={'identity':30*86400,'status':86400,'signature':7*86400,'space':86400}
     LABELS={'identity':'头像和昵称','status':'在线状态','signature':'签名','space':'QQ空间'}
     PROFILE_GROUPS={'qqprofile_set_avatar':'identity','qqprofile_set_nickname':'identity',
-        'qqprofile_set_status':'status','qqprofile_set_signature':'signature'}
+        'qqprofile_set_status':'status','qqprofile_set_signature':'signature',
+        'change_my_signature':'signature','change_my_status':'status','change_my_nickname':'identity'}
 
     def __init__(self,phone):
         self.phone=phone;self.closed=False;self.task=None
@@ -89,10 +91,44 @@ class SocialAutonomy:
         tools=self.tools_for(due)
         if not tools:return
         ready=[k for k in due if any(self.tool_category(t.name)==k for t in tools)]
-        for key in ready:self.state['next_by_category'][key]=now+self.intervals()[key]
-        self.state['next_at']=min(self.state['next_by_category'].values())
-        self.state['last_categories']=ready;self.state['last_result']='considering';self.save()
-        self.task=asyncio.create_task(self.cycle(ready,tools),name='companion-autonomous-social-tools')
+        if not ready:return
+        from .compat import brain
+        coordinator=brain(self.phone.context)
+        if coordinator:
+            def still_ready():
+                if self.closed or not self.phone.config.get('social_full_autonomy_enabled',False):return False
+                if self.task and not self.task.done():return False
+                try:self.phone.social_compat.check()
+                except ValueError:return False
+                return any(time.time()>=self.state['next_by_category'][key] for key in ready)
+            async def selected():
+                if not still_ready():return
+                at=time.time();categories=[k for k in ready if at>=self.state['next_by_category'][k]]
+                current_tools=self.tools_for(categories)
+                categories=[k for k in categories if any(self.tool_category(t.name)==k for t in current_tools)]
+                if not categories:return
+                for key in categories:self.state['next_by_category'][key]=at+self.intervals()[key]
+                self.state['next_at']=min(self.state['next_by_category'].values())
+                self.state['last_categories']=categories;self.state['last_result']='considering';self.save()
+                current=asyncio.current_task();self.task=current
+                try:await self.cycle(categories,current_tools)
+                finally:
+                    if self.task is current:self.task=None
+            coordinator.offer('social',selected,check=still_ready,result=lambda:self.state.get('last_result','worker_returned'))
+            return
+        return  # Existing due timestamps remain pending until Brain is available.
+
+    async def coordinated_cycle(self,categories,tools,coordinator,lease):
+        outcome='interrupted_unknown'
+        try:
+            await self.cycle(categories,tools)
+            outcome=self.state.get('last_result','worker_returned')
+        except asyncio.CancelledError:
+            outcome='interrupted';raise
+        except Exception:
+            outcome='worker_error';raise
+        finally:
+            if coordinator and lease:coordinator.finish(lease,outcome)
 
     def event(self,platform):
         message=AstrBotMessage();message.type=MessageType.FRIEND_MESSAGE
@@ -111,6 +147,8 @@ class SocialAutonomy:
         categories=list(self.DEFAULT_INTERVALS) if categories is None else categories
         tools=self.tools_for(categories) if tools is None else tools
         started=False
+        resource_token=None
+        thinker=getattr(p,'thinking',None)
         try:
             p.social_compat.check();p.social_compat.bind()
             started=True
@@ -124,6 +162,7 @@ class SocialAutonomy:
                 platform_cfg=cfg.get('platform_settings',{})
                 if platform_cfg.get('enable_id_white_list') and p.umo not in platform_cfg.get('id_whitelist',[]):raise ValueError('入口已离开白名单')
             thinker=getattr(p,'thinking',None)
+            if thinker and hasattr(thinker,'social_trace_active'):thinker.social_trace_active=True
             thought=await thinker.social_reflection(reflection_guard) if thinker and p.config.get('thinking_enabled',False) else None
             platform=p.context.get_platform_inst(p.config.get('platform_id','qq-companion'))
             if not platform:raise ValueError('QQ连接不可用')
@@ -146,10 +185,18 @@ class SocialAutonomy:
             common=getattr(thinker,'common_context',None)
             if common:prompt+='\n'+common()
             reflection_guard()
+            # Reserve the native runner's full maximum up front: failed/unused steps
+            # are not refunded, so no unobserved tool-loop call escapes the day cap.
+            if thinker and p.config.get('self_directed_enabled',False):
+                thinker.resources.reserve(6)
+                from .thinking import SESSION,Session
+                # Native runner requests were reserved above. Model-backed image
+                # reviews inside a tool additionally pass through charge_model().
+                resource_token=SESSION.set(Session(6,reflection_guard,thinker.resources.reserve))
             await asyncio.wait_for(p.context.tool_loop_agent(event=self.event(platform),
                 chat_provider_id=p.config.get('social_provider_id','deepseek/deepseek-flash'),
                 prompt=prompt,system_prompt=identity+'\n'+PUBLIC_OWNER_INTRO+SOCIAL_POLICY,
-                tools=tools,contexts=[],max_steps=6,tool_call_timeout=45),timeout=180)
+                tools=tools,contexts=[],max_steps=q.maximum(6,p.config),tool_call_timeout=45),timeout=None if q.enabled(p.config) else 180)
             self.state['last_result']='considered';self.state['cycles']+=1
         except asyncio.CancelledError:
             self.state['last_result']='interrupted';raise
@@ -157,7 +204,11 @@ class SocialAutonomy:
             self.state['last_result']='deferred';self.state['last_error_type']=type(exc).__name__
             report=getattr(p,'report_own_outcome',None)
             if started and callable(report):report('social','cycle','execution_error',error_type=type(exc).__name__)
-        finally:self.save()
+        finally:
+            if resource_token is not None:SESSION.reset(resource_token)
+            finish=getattr(thinker,'finish_social_process',None)
+            if callable(finish):finish('completed' if self.state['last_result']=='considered' else 'interrupted' if self.state['last_result']=='interrupted' else 'blocked')
+            self.save()
 
     async def close(self):
         self.closed=True

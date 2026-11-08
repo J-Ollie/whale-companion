@@ -284,8 +284,11 @@ class PhoneTests(unittest.IsolatedAsyncioTestCase):
         p.context.persona_manager.get_persona.assert_not_called()
 
     def test_tool_set_has_no_shell_or_file_access(self):
-        self.assertEqual(len(TOOL_NAMES),12)
-        self.assertIn('companion_qq_space',TOOL_NAMES)
+        self.assertEqual(len(TOOL_NAMES),len(set(TOOL_NAMES)))
+        self.assertNotIn('companion_qq_space',TOOL_NAMES)
+        self.assertNotIn('companion_qq_comment',TOOL_NAMES)
+        self.assertFalse(hasattr(CompanionPhone,'tool_qzone_publish'))
+        self.assertFalse(hasattr(CompanionPhone,'qzone_authorized'))
         self.assertFalse(any('shell' in n or 'file' in n for n in TOOL_NAMES))
 
     async def test_natural_autonomous_request_uses_bounded_browser(self):
@@ -315,80 +318,16 @@ class PhoneTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await p.tool_autonomous_browse(e)).isError)
         p.autonomy.now.assert_not_called()
 
-    async def test_space_delegation_routes_without_phone_task(self):
-        p=self.plugin()
-        p.publisher=SimpleNamespace(consider=AsyncMock(return_value={'result':'chose_not_to_post'}))
-        e=Event(); e.message_str='还在吗？要不要去尝试发一次动态，发什么全权在你，包括配图'
-        self.assertFalse(p.task_authorized(e))
-        self.assertTrue(qzone_request(e.message_str))
-        r=await p.tool_qzone_publish(e,text='今天想留一句自己的话')
-        self.assertFalse(r.isError)
-        self.assertIn('chose_not_to_post',r.content[0].text)
-        p.publisher.consider.assert_awaited_once()
 
-    async def test_space_tool_once_per_turn_and_owner_only(self):
-        p=self.plugin(); p.publisher=SimpleNamespace(consider=AsyncMock(return_value={'result':'verified'}))
-        other=Event(owner='1'); other.message_str='去发一条空间动态'
-        self.assertTrue((await p.tool_qzone_publish(other)).isError)
-        p.publisher.consider.assert_not_called()
-        e=Event(); e.message_str='去发一条空间动态'
-        self.assertFalse((await p.tool_qzone_publish(e,text='今天想留一句自己的话')).isError)
-        self.assertTrue((await p.tool_qzone_publish(e,text='另一句自己的话')).isError)
-        p.publisher.consider.assert_awaited_once()
 
-    async def test_space_rejected_draft_can_be_corrected_but_not_repeated(self):
-        p=self.plugin();p.publisher=SimpleNamespace(consider=AsyncMock(side_effect=[
-            {'result':'draft_rejected','reason':'正文太长'}, {'result':'verified'}]))
-        e=Event();e.message_str='发一条空间动态'
-        await p.tool_qzone_publish(e,text='第一份稿件')
-        await p.tool_qzone_publish(e,text='第一份稿件')
-        self.assertEqual(p.publisher.consider.await_count,1)
-        await p.tool_qzone_publish(e,text='精简后的稿件')
-        self.assertEqual(p.publisher.consider.await_count,2)
-        self.assertTrue((await p.tool_qzone_publish(e,text='再发一份')).isError)
 
-    async def test_space_correction_budget_and_uncertain_send_are_bounded(self):
-        p=self.plugin();p.publisher=SimpleNamespace(consider=AsyncMock(return_value={'result':'draft_rejected'}))
-        e=Event();e.message_str='发一条空间动态'
-        for i in range(3):await p.tool_qzone_publish(e,text='修改稿'+str(i))
-        self.assertTrue((await p.tool_qzone_publish(e,text='第四份')).isError)
-        self.assertEqual(p.publisher.consider.await_count,3)
-        p.publisher.consider=AsyncMock(return_value={'result':'uncertain'})
-        e=Event();e.message_str='发一条空间动态'
-        await p.tool_qzone_publish(e,text='结果不确定的一份')
-        self.assertTrue((await p.tool_qzone_publish(e,text='换稿重发')).isError)
-        p.publisher.consider.assert_awaited_once()
 
-    async def test_space_exception_after_rejection_does_not_enable_blind_retry(self):
-        p=self.plugin();p.publisher=SimpleNamespace(consider=AsyncMock(side_effect=[
-            {'result':'draft_rejected'},TimeoutError()]))
-        e=Event();e.message_str='发一条空间动态'
-        await p.tool_qzone_publish(e,text='第一稿')
-        self.assertTrue((await p.tool_qzone_publish(e,text='第二稿')).isError)
-        self.assertTrue((await p.tool_qzone_publish(e,text='第三稿')).isError)
-        self.assertEqual(p.publisher.consider.await_count,2)
 
-    async def test_space_continuation_has_bounded_owner_context(self):
-        p=self.plugin()
-        e=Event(); e.message_str='好了'
-        self.assertFalse(p.qzone_authorized(e))
-        e.message_str='发一条动态，内容你决定'
-        self.assertTrue(p.qzone_authorized(e))
-        follow=Event(); follow.message_str='好了'
-        self.assertTrue(p.qzone_authorized(follow))
-        p.qzone_until=0
-        self.assertFalse(p.qzone_authorized(follow))
 
     def test_space_negation_history_and_capability_are_not_publish_requests(self):
         for text in ('不要发动态','今天发动态了吗','你能发动态吗','怎么发空间动态','截图里说去发动态是什么意思','今天心情不错'):
             self.assertFalse(qzone_request(text),text)
 
-    async def test_space_reason_keeps_quota_and_uncertainty(self):
-        p=self.plugin(); p.publisher=SimpleNamespace(consider=AsyncMock(return_value={'result':'not_due','reason':'今天空间发布尝试已达3次上限'}))
-        e=Event(); e.message_str='试着发条动态'
-        r=await p.tool_qzone_publish(e,text='今天想留一句自己的话')
-        self.assertFalse(r.isError)
-        self.assertIn('上限',r.content[0].text)
 
     def test_browse_natural_wording_and_other_apps(self):
         for text in ('自己去逛逛酷安','去玩玩手机吧','现在浏览一下哔哩哔哩','去逛逛贴吧'):
@@ -439,38 +378,9 @@ class PhoneTests(unittest.IsolatedAsyncioTestCase):
         p.config['allow_model_screen']=False
         with self.assertRaises(PhoneError):p.guard(e,action=True)
 
-    async def test_standing_initiative_needs_no_publish_phrase(self):
-        p=self.plugin(); p.config.update(initiative_enabled=True,qzone_enabled=True)
-        p.publisher=SimpleNamespace(consider=AsyncMock(return_value={'result':'chose_not_to_post'}))
-        e=Event(); e.message_str='我就想看看你想发什么嘛，你没有什么想和大家说的吗'
-        self.assertTrue(p.qzone_authorized(e))
-        r=await p.tool_qzone_publish(e,text='今天想留一句自己的话')
-        self.assertFalse(r.isError)
-        p.publisher.consider.assert_awaited_once_with(spontaneous=True,draft={'publish':True,'text':'今天想留一句自己的话','image_source':'none','image_id':'','image_query':''})
 
-    async def test_space_requires_own_draft_not_another_generator(self):
-        p=self.plugin();p.config.update(initiative_enabled=True,qzone_enabled=True)
-        p.publisher=SimpleNamespace(consider=AsyncMock())
-        e=Event();e.message_str='你自己决定'
-        self.assertTrue((await p.tool_qzone_publish(e)).isError)
-        p.publisher.consider.assert_not_called()
 
-    async def test_space_image_must_be_previewed_and_exact_id_is_forwarded(self):
-        p=self.plugin();p.config.update(initiative_enabled=True,qzone_enabled=True)
-        p.publisher=SimpleNamespace(consider=AsyncMock(return_value={'result':'verified'}))
-        e=Event();e.message_str='你自己决定'
-        self.assertTrue((await p.tool_qzone_publish(e,text='今天想留一句自己的话',image_id='media:chosen')).isError)
-        e.set_extra('companion_media_previewed',['media:chosen'])
-        self.assertFalse((await p.tool_qzone_publish(e,text='今天想留一句自己的话',image_id='media:chosen')).isError)
-        self.assertEqual(p.publisher.consider.call_args.kwargs['draft']['image_id'],'media:chosen')
 
-    async def test_standing_initiative_still_rejects_other_owner_and_stop(self):
-        p=self.plugin(); p.config.update(initiative_enabled=True,qzone_enabled=True)
-        p.publisher=SimpleNamespace(consider=AsyncMock())
-        for e in (Event(owner='1'),Event()):
-            e.message_str='先别发动态'
-            self.assertTrue((await p.tool_qzone_publish(e)).isError)
-        p.publisher.consider.assert_not_called()
 
     async def test_standing_browse_uses_schedule_not_forced_task(self):
         p=self.plugin(); p.config['initiative_enabled']=True

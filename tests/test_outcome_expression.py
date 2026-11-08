@@ -1,6 +1,7 @@
 """Real receipts, optional expression, scope isolation and failure-channel fallback."""
 import json
 import os
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
@@ -120,6 +121,48 @@ class StoreTests(unittest.TestCase):
         self.s.recover('greeting','message','platform_accepted',now=NOW-100)
         self.assertEqual(self.s.snapshot(now=NOW)[0]['state'],'open')
 
+    def thinking_run(self, at, *, scope='owner', status='completed', phase='executing', activity='practice'):
+        path = self.root/'thinking.sqlite3'
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE IF NOT EXISTS runs(scope TEXT,at REAL,status TEXT,phase TEXT,activity TEXT)')
+            db.execute('INSERT INTO runs VALUES(?,?,?,?,?)',(scope,at,status,phase,activity))
+        return path
+
+    def test_later_completed_decision_recovers_validation_only_and_is_idempotent(self):
+        self.s.record('autonomy','activity','model_invalid',now=NOW-500)
+        self.s.record('autonomy','activity','execution_timeout',now=NOW-500)
+        path = self.thinking_run(NOW-100)
+        before = path.read_bytes()
+        self.s.import_thinking(path, now=NOW)
+        states = {r['reason']:r for r in self.s.snapshot(now=NOW)}
+        self.assertEqual(states['model_invalid']['state'], 'available_again')
+        self.assertEqual(states['execution_timeout']['state'], 'open')
+        self.assertIn('不证明原活动已补做', states['model_invalid']['later_evidence'])
+        version = states['model_invalid']['version']
+        self.s.import_thinking(path, now=NOW)
+        self.assertEqual({r['reason']:r for r in self.s.snapshot(now=NOW)}['model_invalid']['version'], version)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_other_scope_private_thought_running_and_failed_runs_are_not_recovery(self):
+        self.s.record('autonomy','activity','growth_action_invalid',now=NOW-500)
+        path = self.thinking_run(NOW-100, scope='other')
+        self.thinking_run(NOW-90, phase='private_complete', activity='private_reflection')
+        self.thinking_run(NOW-80, status='running')
+        self.thinking_run(NOW-70, status='invalid_output')
+        self.thinking_run(NOW+10)
+        self.s.import_thinking(path, now=NOW)
+        self.assertEqual(self.s.snapshot(now=NOW)[0]['state'], 'open')
+
+    def test_old_success_does_not_close_new_failure_and_missing_store_is_safe(self):
+        self.s.record('autonomy','activity','model_invalid',now=NOW-50)
+        path = self.thinking_run(NOW-100)
+        self.s.import_thinking(path, now=NOW)
+        self.assertEqual(self.s.snapshot(now=NOW)[0]['state'], 'open')
+        path.write_text('broken database')
+        self.s.import_thinking(path, now=NOW)
+        self.s.import_thinking(self.root/'missing.sqlite3', now=NOW)
+        self.assertEqual(self.s.snapshot(now=NOW)[0]['state'], 'open')
+
 
 class ProactiveTests(unittest.IsolatedAsyncioTestCase):
     due=flow.FlowTests.due
@@ -176,6 +219,20 @@ class ProactiveTests(unittest.IsolatedAsyncioTestCase):
         self.transport.call_action.assert_not_awaited()
         self.assertNotIn('daily_count', self.plugin.state)
         self.assertIsNone(self.plugin.outcome_ledger().snapshot(now=NOW)[0]['last_said_at'])
+
+    async def test_isolated_incident_cannot_become_continuous_outage_even_if_checker_agrees(self):
+        item=self.experience('autonomy','activity','model_invalid')
+        self.draft(item,'我这个操作一直卡着，今天什么都没干。')
+        with patch('time.time',return_value=NOW):await self.plugin.tell_outcome(item,self.phone)
+        self.transport.call_action.assert_not_awaited()
+        self.assertEqual(self.plugin.context.llm_generate.await_count,1)
+
+    async def test_incident_guard_preserves_complaint_and_request_for_help(self):
+        item=self.experience('autonomy','activity','model_invalid')
+        text='这次决定怎么做时没通过，真烦，你快帮我看看。'
+        self.draft(item,text)
+        with patch('time.time',return_value=NOW):await self.plugin.tell_outcome(item,self.phone)
+        self.transport.call_action.assert_awaited_once()
 
     async def test_audit_must_quote_the_sent_draft_and_bind_it_to_the_selected_experience(self):
         item = self.experience()

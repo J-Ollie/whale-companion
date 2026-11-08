@@ -1,4 +1,14 @@
 {
+  "brain_enabled": {
+    "type": "bool",
+    "description": "统一大脑：来信先决定是否接下，协调后台活动；保留所有原权限和配额。",
+    "default": true
+  },
+  "brain_dialogue_daily_calls": {
+    "type": "int",
+    "description": "来信独立决策每日最多模型请求数；0暂停新操作决策，仍可普通交流。与自主活动额度分别计数。",
+    "default": 96
+  },
   "dialogue_low_reasoning": {
     "type": "bool",
     "description": "正式私聊回复使用 DeepSeek 低强度思考；后台情绪、收尾等判断保留原模型设置",
@@ -103,5 +113,16 @@
     "type": "bool",
     "default": false,
     "description": "维护期间暂存私聊，恢复后按原发送者处理"
+  },
+  "brain_background_daily_plans": {
+    "type": "int",
+    "description": "统一大脑每日自主选择次数上限；同时计入原有自主模型总额度，不增加其他操作配额。",
+    "default": 12
+  },
+  "unlimited_quotas": {
+    "description": "不设项目消费与次数额度",
+    "type": "bool",
+    "default": false,
+    "hint": "仍保留睡眠、暂停、授权、隐私、证据门槛及供应商限制；计数不会清零。"
   }
 }

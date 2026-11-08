@@ -1,3 +1,4 @@
+from . import quota as q
 """Grounded long-term memory, optional diary, revisable impressions and real time."""
 import asyncio
 import hashlib
@@ -181,7 +182,7 @@ class CompanionMemory(Star):
 
     def recall_budget(self,event):
         count=int(event.get_extra('companion_recall_calls',0))
-        if count>=4:raise ValueError('本轮回忆已查询4次，请根据已有证据回答')
+        if not q.enabled(self.config) and count>=4:raise ValueError('本轮回忆已查询4次，请根据已有证据回答')
         event.set_extra('companion_recall_calls',count+1)
 
     def tool_payload(self,event,data):
@@ -247,14 +248,14 @@ class CompanionMemory(Star):
         except (ValueError,TypeError):return
 
     async def expand_query(self,event,query):
-        if event.get_extra('companion_semantic_attempted',False):return []
+        if not q.enabled(self.config) and event.get_extra('companion_semantic_attempted',False):return []
         event.set_extra('companion_semantic_attempted',True)
         if self.resting():return []
         from datetime import datetime
         from .memory import TZ
         day=datetime.now(TZ).date().isoformat();usage=self.store.get_meta('semantic_usage',{})
         if usage.get('day')!=day:usage={'day':day,'calls':0}
-        if usage['calls']>=12:return []
+        if not q.enabled(self.config) and usage['calls']>=12:return []
         usage['calls']+=1;self.store.set_meta('semantic_usage',usage)
         try:
             response=await asyncio.wait_for(self.context.llm_generate(
@@ -798,7 +799,7 @@ class CompanionMemory(Star):
             day=datetime.fromtimestamp(now,TZ).date().isoformat()
             usage=self.store.get_meta('extraction_usage',{})
             if usage.get('day')!=day:usage={'day':day,'calls':0,'input_bytes':0}
-            if usage['calls']>=48:return
+            if not q.enabled(self.config) and usage['calls']>=48:return
             usage['calls']+=1;usage['input_bytes']+=size(system)+size(payload)
             self.store.set_meta('extraction_usage',usage)
             self.store.set_meta('last_reflection'+suffix,now)

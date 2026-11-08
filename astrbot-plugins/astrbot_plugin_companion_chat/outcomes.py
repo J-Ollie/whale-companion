@@ -24,19 +24,32 @@ REASONS={'voice_synthesis_failed':'语音准备发生错误',
          'execution_error':'执行过程出现错误，具体原因尚不确定',
          'execution_timeout':'执行等待超时',
          'social_unconfirmed':'社交操作的结果尚未确认',
-         'model_invalid':'用于决定操作的输出未通过校验'}
+         'model_invalid':'用于决定操作的输出未通过校验',
+         'growth_action_invalid':'这次决策中的成长动作字段未通过格式校验，活动已停止'}
 RECOVERY={'voice_ready':'后来一次语音准备成功',
           'platform_accepted':'后来一次同类消息被平台接受',
+          'decision_validated':'后来一轮自主活动已完成，决策环节通过了校验；不证明原活动已补做或故障根因已消除',
           'later_same_kind_succeeded':'后来一次同类操作返回成功；不证明原来那件事已补办'}
 RULE='''这些是你自己的实际受阻经历，不是每轮必讲的报修清单。可以独立找管理员聊，也可以在他来找你时顺口提到；也可以先接他当前的话，稍后再说或不说。
 intention是所记录任务或操作的目标，不证明你过去一直惦记或有某种具体心理活动。
 怎么表达由你结合当前情绪、想法和相处语境决定：可以遗憾、烦躁、不满、抱怨、催他处理、直接请求帮助，也可以平静说明或说不知道。不要求温和体贴、认错、安慰或套固定台词，不强制附加某种情绪，不为证明有情绪补造身体感受或过去一直在想什么。
 保留事实边界：区分打算、真实尝试、语音准备、调用发送、平台接受和已读；没准备好语音不等于已向QQ发送。uncertain表示不知道结果，不能说成确定失败或成功，也不能因此重试原操作。
 只知道受阻阶段或错误类型，就直说目前只知道这些、具体原因不知道。不要编忘了、疏忽或责任，也不要把未知都归咎插件。可以希望对方处理，不能虚构已经修复或已安排自动重试。
+first_at和last_at是受阻发生时间，count是记录中的累计次数。open只表示尚无匹配的后续恢复记录，不能据此说整个功能一直卡住、期间什么都没做或今天仍失败。按实际日期说明那次或那几次受阻，未知当前状态就保留未知。
+日常告知优先用中文说明具体环节。error_type只是诊断用的异常类别，不能解释具体原因；对方讨论技术细节时可以据实列出，不必把字段名和英文错误类当作日常台词。
 恢复记录只证明列明的那次后续阶段成功；不证明原任务已补办、对方已收到或你亲自看过听过。已说过的时间也是记录，可以按语境继续谈或催处理，不必机械重复。这里不改变联系人隔离、睡眠、免打扰、既有主动额度和不确定发送不重试的约束。'''
 
 
 def normalized(text):return re.sub(r'[\s，,；;]','',str(text))
+
+
+def unsupported_outage_claim(text):
+    """Incident rows cannot establish continuous outage or exhaustive inactivity."""
+    for clause in re.split(r'[，,。！？!?；;\n]',str(text)):
+        if re.search(r'并非|不是|不代表|不等于|不能说|不能说明',clause):continue
+        if re.search(r'(?:一直|始终|持续).{0,8}(?:卡住|卡着|卡在|没通过|无法运行|运行不了)',clause):return True
+        if re.search(r'(?:今天|昨天|整天|这两天).{0,8}(?:什么|啥)(?:都|也)?没(?:干|做)',clause):return True
+    return False
 
 
 class Outcomes:
@@ -80,10 +93,29 @@ class Outcomes:
         if recovery not in RECOVERY:raise ValueError('invalid_recovery')
         now=time.time() if now is None else now
         with closing(self.connect()) as db,db:
+            stage_filter = " AND reason IN ('model_invalid','growth_action_invalid')" if recovery=='decision_validated' else ''
             db.execute('''UPDATE experiences SET state='available_again',success_at=?,recovery=?,
                 version=version+1 WHERE scope=? AND feature=? AND operation=? AND state='open'
-                AND last_at<=? AND (?='' OR reason=?) ''',
+                AND last_at<=? AND (?='' OR reason=?) '''+stage_filter,
                 (now,recovery,self.scope,feature,operation,now,reason,reason))
+
+    def import_thinking(self, path, now=None):
+        """Recover validation incidents from later completed public decision runs."""
+        path = Path(path)
+        if not path.is_file():
+            return
+        now = time.time() if now is None else now
+        try:
+            with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)) as source:
+                rows = source.execute('''SELECT at FROM runs WHERE scope=? AND at BETWEEN ? AND ?
+                    AND status='completed' AND phase='executing'
+                    AND activity IN ('idle','lookup','read','browse','reflect','rest','sleep','workspace','practice')
+                    ORDER BY at DESC LIMIT 100''', (self.scope, now-3*86400, now)).fetchall()
+        except (sqlite3.Error, OSError):
+            return
+        for (at,) in reversed(rows):
+            # An older run cannot clear a newer failure, even if observed later.
+            self.recover('autonomy', 'activity', 'decision_validated', now=at)
 
     def import_outreach(self,path):
         if not Path(path).exists():return

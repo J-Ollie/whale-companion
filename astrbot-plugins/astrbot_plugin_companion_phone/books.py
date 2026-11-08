@@ -1,3 +1,4 @@
+from . import quota as q
 """Two journals. Private pages have no automatic context/export/publication route."""
 import json
 import re
@@ -25,8 +26,9 @@ def rows(path,limit=100):
 
 
 class Books:
-    def __init__(self,root):
+    def __init__(self,root,experience=None):
         self.root=root
+        self.experience=experience
         self.daily_path=root/'diary-schedule.json'
         self.daily=json.loads(self.daily_path.read_text(encoding='utf-8')) if self.daily_path.exists() else {
             'enabled_day':datetime.now(TZ).date().isoformat(),'sources':{},'processed':{},'last_attempt':0}
@@ -64,6 +66,17 @@ class Books:
             evidence=db.execute("SELECT id,role,text,at FROM observations WHERE qq='100000001' AND at>=? ORDER BY id DESC LIMIT 400",(now-2*86400,)).fetchall()
         self.collect([{'id':'chat:'+str(i),'app':'私聊','note':role+': '+text[:800],
             'views':1,'public_content':False,'timestamp':at} for i,role,text,at in evidence])
+
+    def collect_self_experience(self,now=None):
+        if self.experience is None:return
+        now=time.time() if now is None else now
+        # Activate from today's date. Do not change the evidence digest of already
+        # completed older diaries by retroactively inserting newly available sources.
+        day=datetime.fromtimestamp(now,TZ).date().isoformat()
+        if 'self_experience_since_day' not in self.daily:
+            self.daily['self_experience_since_day']=day;self.save_schedule()
+        since=datetime.fromisoformat(self.daily['self_experience_since_day']).replace(tzinfo=TZ).timestamp()
+        self.collect(self.experience.diary_sources(max(since,now-2*86400),now))
 
     def write_daily(self,visibility,day,choice,evidence,now):
         text=choice.get('text')
@@ -103,7 +116,7 @@ class Books:
         if re.search(r'\d{5,}|https?://|密码|验证码|密钥|token|api.?key',text,re.I): return False
         current=self.read(visibility,1000)
         day=datetime.now(TZ).date().isoformat()
-        if sum(r.get('day')==day for r in current)>=3: return False
+        if not q.enabled() and sum(r.get('day')==day for r in current)>=3: return False
         if any(r['text']==text or r.get('source_id')==source_id for r in current): return False
         row={'id':visibility+':'+str(time.time_ns()),'at':time.time(),'day':day,
              'mood':'公开日记' if visibility=='public' else '私密日记',
@@ -178,6 +191,8 @@ class Books:
         had_chat=any(r.get('app')=='私聊' for r in valid)
         note=('当日记录中有这些应用的活动：'+ '、'.join(apps)+'。' if apps else '当日没有保存可展开的应用活动详情。')
         if had_chat:note+='当天有过交流；交流对象、原话与具体内容不提供给公开日记。'
+        own=[r for r in valid if r.get('kind')=='self_experience' and public_source(r)]
+        if own:note+='当天还留有自己的思考或代码练习记录，详见带日期的素材；想过不等于做过，程序执行不等于看过图。'
         note+='记录不完整不等于什么也没发生；可以写平淡的一天或此刻的感想，不据此补造事件。'
         return {'id':'day:'+day,'app':'自己的一天','note':note,'views':1,
                 'public_content':True,'kind':'day_frame'}
@@ -199,6 +214,7 @@ class Books:
 
     async def tick(self,model,now=None):
         now=time.time() if now is None else now
+        self.collect_self_experience(now)
         if self.lock.locked() or now-self.daily.get('last_attempt',0)<1800:return
         self.collect_owner_chat(now)
         local=datetime.fromtimestamp(now,TZ)
@@ -215,17 +231,37 @@ class Books:
             for day in sorted(due):
                 await self.finish_day(model,day,now)
 
+    def ready_for_reflection(self,now=None):
+        """Read-only readiness. Collection and schedule cursors remain unchanged."""
+        now=time.time() if now is None else now
+        if self.lock.locked() or now-self.daily.get('last_attempt',0)<1800:return False
+        local=datetime.fromtimestamp(now,TZ)
+        today=local.date().isoformat()
+        start=max(datetime.fromisoformat(self.daily['enabled_day']).date(),local.date()-timedelta(days=31))
+        end=local.date() if (local.hour,local.minute)>=(23,30) else local.date()-timedelta(days=1)
+        while start<=end:
+            for visibility in ('public','private'):
+                evidence=self.day_evidence(start.isoformat(),visibility)
+                digest=hashlib.sha256(json.dumps(evidence,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+                if self.daily['processed'].get(visibility+':'+start.isoformat())!=digest:return True
+            start+=timedelta(days=1)
+        return False
+
+    def day_evidence(self,day,visibility):
+        valid=[r for r in self.daily['sources'].values() if r['day']==day]
+        eligible=[r for r in valid if visibility=='private' or public_source(r)]
+        evidence=[{'id':r['id'],'app':r['app'],'note':r.get('note',''),'views':r['views']} for r in eligible]
+        return [self.day_frame(day,valid)]+evidence
+
     async def finish_day(self,model,day,now,books=('public','private'),force=False,retrospective=False):
         retrospective=retrospective or day<datetime.fromtimestamp(now,TZ).date().isoformat()
         valid=[r for r in self.daily['sources'].values() if r['day']==day]
         # The public model call never receives private pages, QQ observations or owner facts.
         for visibility in books:
             eligible=[r for r in valid if visibility=='private' or public_source(r)]
-            evidence=[{'id':r['id'],'app':r['app'],'note':r.get('note',''),'views':r['views']} for r in eligible]
-            frame=self.day_frame(day,valid)
             # Private text stays in the private request; public receives only this
             # deliberately coarse, code-generated outline plus safe public reading.
-            evidence=[frame]+evidence
+            evidence=self.day_evidence(day,visibility)
             key=visibility+':'+day
             digest=hashlib.sha256(json.dumps(evidence,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             policies=self.daily.setdefault('journal_policies',{})

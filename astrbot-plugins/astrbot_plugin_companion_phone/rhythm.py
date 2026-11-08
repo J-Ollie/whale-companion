@@ -1,3 +1,4 @@
+from . import quota as q
 """Persistent simulated rest, curiosity and slowly learned habits; no device API."""
 import json
 import math
@@ -100,7 +101,7 @@ class Rhythm:
             if mode=='asleep':
                 self.state['energy']=clamp(self.state['energy']+0.105*hours,0,1)
                 if end>=self.state['until']:
-                    self.state.update(mode='awake',mode_since=end,awake_since=end,until=0,next_decision=end+1800)
+                    self.state.update(mode='awake',mode_since=end,awake_since=end,until=0,next_decision=end+1800,sleep_advisory=False)
             elif mode=='resting':
                 self.state['energy']=clamp(self.state['energy']+0.08*hours,0,1)
                 if end>=self.state['until']:
@@ -110,9 +111,19 @@ class Rhythm:
                 phase=self._phase(end)
                 if mode!='browsing' and (self.state['energy']<0.16 or
                         (phase>=16.5 and self._awake_hours(end)>=6)):
-                    wake=self._next_wake(end)
-                    wake=clamp(wake,end+6*3600,end+10*3600)
-                    self.state.update(mode='asleep',mode_since=end,until=wake,next_decision=wake+1800)
+                    day=datetime.fromtimestamp(end,TZ).date().isoformat()
+                    count=self.state['decisions'] if self.state['decision_day']==day else 0
+                    can_think=getattr(self,'brain_managed',False) and count<(12 if self.initiative else 8)
+                    if can_think:
+                        # One opportunity per observed wake cycle, not a model call
+                        # every clock tick. Keep the character awake until choice.
+                        if not self.state.get('sleep_advisory'):
+                            self.state['sleep_advisory']=True
+                            self.state['next_decision']=min(self.state['next_decision'],end+60)
+                    else:
+                        wake=clamp(self._next_wake(end),end+6*3600,end+10*3600)
+                        self.state.update(mode='asleep',mode_since=end,until=wake,next_decision=wake+1800,
+                                          sleep_origin='fallback_no_decision_capacity')
                 elif mode=='browsing' and end-self.state['mode_since']>600:
                     self.state.update(mode='awake',mode_since=end)
             self.state['curiosity']=clamp(self.state['curiosity']+0.035*hours,0,1)
@@ -127,7 +138,7 @@ class Rhythm:
         now=time.time() if now is None else now
         day=datetime.fromtimestamp(now,TZ).date().isoformat()
         decisions=self.state['decisions'] if self.state['decision_day']==day else 0
-        return decisions<(12 if self.initiative else 8) and (force or (self.state['mode']=='awake' and now>=self.state['next_decision']))
+        return (q.enabled() or decisions<(12 if self.initiative else 8)) and (force or (self.state['mode']=='awake' and now>=self.state['next_decision']))
 
     def reserve_decision(self,now=None):
         now=time.time() if now is None else now
@@ -149,10 +160,17 @@ class Rhythm:
         self.state['next_decision']=now+clamp(minutes,20 if self.initiative else 30,120 if self.initiative else 240)*60
         self.save(force=True)
 
-    def choose_rest(self,action,minutes=None,now=None):
+    def choose_rest(self,action,minutes=None,now=None,*,by_brain=False):
         now=time.time() if now is None else now
         self.advance(now)
         if action=='sleep':
+            if by_brain or getattr(self,'brain_managed',False):
+                duration=480 if type(minutes) not in (int,float) or not math.isfinite(minutes) else clamp(minutes,30,720)
+                until=now+duration*60
+                self.state.update(mode='asleep',mode_since=now,until=until,next_decision=until+600,
+                                  sleep_origin='self_choice',sleep_advisory=False)
+                self.save(force=True)
+                return
             # A well-rested daytime character may nap, not shift its whole day.
             if self.state['energy']>0.45 and (self._phase(now)<14 or self._awake_hours(now)<6):
                 action='rest'
@@ -163,6 +181,7 @@ class Rhythm:
             duration=30 if not isinstance(minutes,(int,float)) or not math.isfinite(minutes) else clamp(minutes,10,90)
             until=now+duration*60
             self.state.update(mode='resting',mode_since=now,until=until,next_decision=until+600)
+            self.state.update(sleep_origin='self_choice',sleep_advisory=False)
         self.save(force=True)
 
     def begin_browse(self):
@@ -229,7 +248,7 @@ class Rhythm:
         rows=self.diary_rows(300)
         now=time.time()
         day=datetime.fromtimestamp(now,TZ).date().isoformat()
-        if sum(datetime.fromtimestamp(r['at'],TZ).date().isoformat()==day for r in rows)>=3: return False
+        if not q.enabled() and sum(datetime.fromtimestamp(r['at'],TZ).date().isoformat()==day for r in rows)>=3: return False
         if any(r['text']==text or r['source_id']==source_id for r in rows): return False
         row={'id':'life:'+str(time.time_ns()),'at':now,'mood':'自主经历',
             'text':text,'source_id':source_id,'source_app':source['app'],
@@ -285,7 +304,10 @@ class Rhythm:
         interests=sorted(self.state['interests'].items(),key=lambda p:p[1]['score'],reverse=True)[:6]
         anchor=int(self.state['wake_anchor'])%1440
         return {'healthy':True,'mode':MODES[self.state['mode']],
-            'initiative_enabled':self.initiative,'daily_decision_limit':12 if self.initiative else 8,
+            'brain_managed_now':bool(getattr(self,'brain_managed',False)),
+            'last_recorded_rest_origin':self.state.get('sleep_origin'),
+            'current_rest_until':self.state['until'] if self.state['mode'] in ('asleep','resting') else None,
+            'initiative_enabled':self.initiative,'daily_decision_limit':None if q.enabled() else 12 if self.initiative else 8,
             'energy':round(self.state['energy'],2),'curiosity':round(self.state['curiosity'],2),
             'social':round(self.state['social'],2),
             'wake_tendency':f'{anchor//60:02}:{anchor%60:02}',
@@ -297,4 +319,6 @@ class Rhythm:
     def context(self):
         return ('小鲸鱼当前作息、精力与根据经历形成的兴趣记录：'+json.dumps(self.summary(),ensure_ascii=False)
             +'。日常按当前状态自然表达，不必把实现说明带进问候；问运行机制时据实解释。记录不能证明未发生的吃饭、洗漱、外出等身体活动。'
-            '睡眠和休息期间按原门控保留未读，醒后再处理。你的兴趣可以与管理员不同；单次经历只是初步印象，不急着变性格。')
+            '睡眠和休息期间按原门控保留未读，醒后再处理。brain_managed_now表示现在由自主思考选择作息，仍受额度与暂停约束；'
+            'last_recorded_rest_origin只证明最近一次留下来源标记的休息：self_choice是自己选择，fallback_no_decision_capacity是兜底，空值是旧记录未注明，不能倒推历史动机。'
+            '你的兴趣可以与管理员不同；单次经历只是初步印象，不急着变性格。')

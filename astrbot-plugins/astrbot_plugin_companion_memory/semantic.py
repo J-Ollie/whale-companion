@@ -1,3 +1,4 @@
+from . import quota as q
 """Private KB bridge reusing the installed Obsidian sync engine, not its public staging UI."""
 import asyncio
 import json
@@ -48,7 +49,7 @@ class SemanticMemory:
         used, volume = tuple(row) if row else (0, 0)
         cap = int(self.plugin.config.get('semantic_daily_queries', 64)) if kind == 'query' else int(self.plugin.config.get('semantic_daily_index_docs', 2048))
         char_cap = 20000 if kind == 'query' else int(self.plugin.config.get('semantic_daily_index_chars', 2000000))
-        if used+units > max(0, cap) or volume+chars > max(0, char_cap):
+        if not q.enabled(self.plugin.config) and (used+units > max(0, cap) or volume+chars > max(0, char_cap)):
             return False
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO budget VALUES(?,?,?,?)', (day, kind, used+units, volume+chars))

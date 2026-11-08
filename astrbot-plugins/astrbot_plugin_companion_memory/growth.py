@@ -1,3 +1,4 @@
+from . import quota as q
 """Periodic, evidence-grounded self review, independent of explicit user corrections."""
 import asyncio
 import json
@@ -158,6 +159,28 @@ def record(store, qq, status, now, supplied=(), refs=()):
 
 
 async def review(plugin, now=None):
+    current = time.time() if now is None else now
+    if (plugin.resting() or not all(plugin.config.get(k, True) for k in ('enabled', 'auto_extract', 'growth_enabled'))
+            or plugin.processing.locked() or current < plugin.store.get_meta('growth_review_due:'+plugin.owner, 0)
+            or current-plugin.store.get_meta('last_growth:'+plugin.owner, 0) < 86400):
+        return
+    lookup = getattr(plugin.context, 'get_registered_star', None)
+    meta = lookup('astrbot_plugin_companion_chat') if lookup else None
+    chat = getattr(meta, 'star_cls', None) if meta and getattr(meta, 'activated', False) else None
+    brain = getattr(chat, 'brain', None) if chat and getattr(chat, 'ready', False) else None
+    if brain:
+        def ready():
+            at=time.time()
+            return bool(not plugin.resting() and not plugin.processing.locked()
+                and all(plugin.config.get(k,True) for k in ('enabled','auto_extract','growth_enabled'))
+                and at>=plugin.store.get_meta('growth_review_due:'+plugin.owner,0)
+                and at-plugin.store.get_meta('last_growth:'+plugin.owner,0)>=86400
+                and plugin.context.get_config(umo=plugin.umo).get('provider_settings',{}).get('enable',False))
+        return brain.offer('growth',lambda:_review(plugin),check=ready)
+    return False  # Keep the existing due marker; no independent growth worker.
+
+
+async def _review(plugin, now=None):
     now = time.time() if now is None else now
     store, qq = plugin.store, plugin.owner
     if (plugin.resting() or not all(plugin.config.get(k, True) for k in ('enabled', 'auto_extract', 'growth_enabled'))
@@ -198,7 +221,7 @@ async def review(plugin, now=None):
         own = store.get_meta('growth_review_usage:'+qq, {})
         if own.get('day') != day:
             own = {'day': day, 'calls': 0}
-        if usage['calls'] >= 48 or own['calls'] >= 2:
+        if not q.enabled(plugin.config) and (usage['calls'] >= 48 or own['calls'] >= 2):
             record(store, qq, 'budget_exhausted', now, supplied)
             store.set_meta('growth_review_due:'+qq, now+3600)
             return

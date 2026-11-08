@@ -59,6 +59,8 @@ def public_source(row):
     from .access import PUBLIC_APPS
     if row.get('public_content') is not True:
         return False
+    from .self_experience import public_source as self_source
+    if self_source(row):return True
     if row.get('app') in PUBLIC_APPS:
         return True
     event = EVENTS.get(row.get('action'))

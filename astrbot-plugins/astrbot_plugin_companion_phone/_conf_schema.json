@@ -152,6 +152,31 @@
     "type": "int",
     "default": 86400
   },
+  "practice_enabled": {
+    "description": "允许公共自主思考选择隔离Python标准库与数值绘图练习；不联网、不读取运行数据、不自动安装依赖",
+    "type": "bool",
+    "default": false
+  },
+  "practice_daily_limit": {
+    "description": "每天最多隔离练习次数，1至24；失败或结果未知也计数，与原模型/手机/网页额度独立",
+    "type": "int",
+    "default": 12
+  },
+  "self_directed_enabled": {
+    "description": "自主选择继续探索与下次唤起，使用独立作品空间；保留原作息、隐私和各模块额度",
+    "type": "bool",
+    "default": false
+  },
+  "autonomy_daily_model_calls": {
+    "description": "普通自主会话与自主社交合计每日模型请求预留上限，1至240；失败及社交未用步骤不返还，不计普通聊天和原独立日记任务",
+    "type": "int",
+    "default": 72
+  },
+  "autonomy_session_seconds": {
+    "description": "一次连续自主会话的总时长上限，30至1200秒；单次手机访问仍受原600秒上限约束",
+    "type": "int",
+    "default": 600
+  },
   "thinking_enabled": {
     "description": "先自主思考再决定行动；复用作息决策机会，保留未完问题与自主成长尝试，不增加工具授权",
     "type": "bool",
@@ -166,5 +191,16 @@
     "description": "自主思考与决策使用的已配置模型提供商",
     "type": "string",
     "default": "deepseek/deepseek-flash"
+  },
+  "full_phone_access": {
+    "description": "专用备用机日常完整使用授权（保留付款、数据删除、账号安全、作息与手动暂停保护）",
+    "type": "bool",
+    "default": false
+  },
+  "unlimited_quotas": {
+    "description": "不设项目消费与次数额度",
+    "type": "bool",
+    "default": false,
+    "hint": "仍保留睡眠、暂停、授权、隐私、证据门槛及供应商限制；计数不会清零。"
   }
 }

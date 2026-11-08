@@ -1,3 +1,4 @@
+from . import quota as q
 """Request-local evidence and a bounded check of operational/self-history claims."""
 import asyncio
 import json
@@ -10,7 +11,7 @@ from astrbot.core.agent.message import TextPart
 
 from .breeze.performance import decode_reply
 from .commitments import TZ, transcript
-from .outcomes import RULE as OUTCOME_RULE, normalized
+from .outcomes import RULE as OUTCOME_RULE, normalized, unsupported_outage_claim
 
 RULE = '''先接住对方此刻具体的话意和感受。核对留在内部，只约束自己的行为、经历、具体原因和自动执行承诺，不把普通相处变成核验报告。
 对方说想念、空落或少了平时的招呼，首先是在表达感受，不自动当成责备、事故追问或要求保证；不惯性认错，也不主动宣读“尚未核实、不能保证”。
@@ -24,6 +25,13 @@ RULE = '''先接住对方此刻具体的话意和感受。核对留在内部，�
 推测如确有必要，明确说可能；用户问原因时先核对下列记录，记录不足就承认不知道。不用编一个听起来体贴的理由维护形象。
 自己的近期执行记录会随本轮提供；询问昨天等其他日期时可用companion_self_status查询最近7个自然日的outreach记录，balance可重读余额摘要。它只读固定字段，不是任意日志访问。没有记录的早期行为不可补写。
 不知道原因就不补原因；这不妨碍自然回应、表达当下想法或继续聊天。保留你已有的情绪与态度，不强制热情、道歉、关系表态或套固定安慰句。'''
+SELF_ACTIVITY_RULE = ('own_activities是自己带日期的活动资料，可自然提起，也可不谈，不要求汇报。'
+    'thought_snapshot只证明当时留下简短想法，不证明持续思考或计划完成。'
+    'program_executed=true才证明对应程序执行成功；只有独立work_image_review回执证明当次图片输入模型取得观察；生成图文件不证明自己看过图，'
+    '自拟标题、注释和打印的第一反应不证明隔天回看、感受、兴趣或训练模型。'
+    '以at的实际日期区分今天、隔天和上周，不用旧台词推翻已有成功记录。'
+    '记录缺失不等于从未做过；没什么特别仍可表达主观评价，无需列举或强迫分享。')
+RULE += '\n'+SELF_ACTIVITY_RULE
 RISK = re.compile(r'试过|翻过|比较过|琢磨过|(?:我|这事).{0,8}惦记着|起晚|睡|醒|忘|没(?:看|听|注|留)|不想(?:打扰|吵)|怕(?:打扰|吵)|等你|以为|因为|所以|刚才|刚刚|已经|正在|还在|一直|明[天早晚]|以后|稍后|待会|等会|会.{0,15}(?:发|叫|提醒|告诉|联系)|(?:发|做|看|听|查|搜|读|安排|设置|完成|解决)了|是我(?:的错|不对|不好|失职|疏忽)|怪我|我的(?:错|问题|责任)|我.{0,12}(?:没|未|忘).{0,10}(?:联系|找你|主动|发消息)|插件.{0,10}(?:故障|问题|失败)')
 RATIONS_TOPIC = re.compile(r'余额|余粮|米缸|饭缸|白饭|吃米|干饭|还剩.*米|token|令牌', re.I)
 RATIONS_FORECAST = re.compile(r'(?:够|还能|还可以).{0,8}(?:吃|用|聊|撑|活).{0,8}(?:一阵|一会|多久|几[天次月]|[一二三四五六七八九十百\d]+[天次月年]|很久|好久)')
@@ -40,12 +48,14 @@ rations_this_turn是当轮账户导出摘要。余额、米缸、白饭、吃米
 未核实可以直说不知道或目前无法确认；明确标作可能且不冒充事实的推测允许。普通情绪、喜好、愿望、玩笑、建议与用户自己的计划不要求执行回执，不把“我想你”误当已发送。
 registered只证明已安排对应消息且受门控/额度约束，submitted只证明平台接受；pending不是已发送，uncertain不能声称成功或补发；别人的已读/听到无法证明。约定登记失败不得仍答应自动做。
 own_outcomes是同一联系人范围内的真实受阻经历，可主动或顺口提起；表达当下情绪、抱怨、请求帮助、催对方处理或直接说不知道都允许，不强制温和认错，也不补造事实。恢复只证明列明的后续阶段，不证明原任务补办完毕。
+own_outcomes的open只表示没有匹配恢复记录，first_at/last_at/count只覆盖那些已记录的失败。不得把旧的单次或几次失败扩大成一直卡住、期间什么都没做，不能从未关闭推断当下仍故障。日常用中文说明具体受阻环节，技术追问时可据实说明异常类别。
 支持则输出JSON {"supported":true,"mentions":[{"id":"确实谈及的own_outcomes原id","quote":"回复中明确谈及该经历的连续原文"}]}，没有谈及就mentions=[]。只提了情绪或普通招呼不算已说明经历。不要为凑mentions改写原答。有不支持的断言则输出{"supported":false,"text":"必要删改后的完整台词","safe_text":"可选：只接当前话意和感受的一小句，不含历史、原因、行动进度或未来自动承诺"}。
 safe_text不是事实解释，也不强加新情绪或关系；能保留原本合适的部分就保留，不套固定安慰句。只做必要删改，不增添历史、能力限制或“不能补发”等结论，不以未登记开脱已有承诺。'''
+CHECK += '\n'+SELF_ACTIVITY_RULE
 
 # This gate applies only to a fallback alternative, never to normal replies.
 # It keeps the fact checker from laundering a new operational claim as comfort.
-SAFE_FACT = re.compile(r'(?:我|这边|今天|刚才|刚刚).{0,18}(?:联系|找|发|提醒|叫醒|安排|设置|完成|解决|忘|忙|睡|醒|查|搜|读|做|看|听)|(?:没|未|已|正在|还在|一直).{0,8}(?:联系|找|发|提醒|安排|设置|完成|查|搜|读|做|看|听)|(?:让你|害你).{0,8}(?:等了|担心了|失望了)|以前|之前|昨天|当时|曾经|每天|永远|一辈子|发送|送达|提交|执行|完成|成功|已读|找到了|查到了|搜到了|叫醒|定时')
+SAFE_FACT = re.compile(r'(?:(?<!帮)我|这边|今天|刚才|刚刚).{0,18}(?:联系|找|发|提醒|叫醒|安排|设置|完成|解决|忘|忙|睡|醒|查|搜|读|做|看|听)|(?:没|未|已|正在|还在|一直).{0,8}(?:联系|找|发|提醒|安排|设置|完成|查|搜|读|做|看|听)|(?:让你|害你).{0,8}(?:等了|担心了|失望了)|以前|之前|昨天|当时|曾经|每天|永远|一辈子|发送|送达|提交|执行|完成|成功|已读|找到了|查到了|搜到了|叫醒|定时')
 RATIONS_FACT = re.compile(r'余额|余粮|米缸|饭缸|见底|够吃|还有.{0,5}(?:米|饭)|\d+(?:\.\d+)?\s*(?:元|块|美元|人民币|tokens?)',re.I)
 META_TALK = re.compile(r'核实|核验|依据|回执|权限|额度|后台|系统|不能保证|无法保证|原因.{0,5}(?:确认|保证)|记录(?:不足|显示|表明)')
 FEELING = re.compile(r'空落|少了点|想你|惦记|孤单|难过|舍不得|失落|有点想|不习惯')
@@ -88,8 +98,8 @@ def evidence(active):
     state = active.state
     out = {'at': datetime.fromtimestamp(now, TZ).isoformat(),
            'policy': {'awake_anytime': active.config.get('awake_anytime', False),
-                      'daily_limit': active.config.get('daily_limit', 4),
-                      'min_interval_hours': active.config.get('min_interval_hours', 2)},
+                      'daily_limit':None if q.enabled(active.config) else active.config.get('daily_limit', 4),
+                      'min_interval_hours':0 if q.enabled(active.config) else active.config.get('min_interval_hours', 2)},
            'active_state_now': {k: state.get(k) for k in ('paused', 'snooze_until', 'unanswered', 'day', 'daily_count', 'last_sent_at', 'last_attempt_at', 'last_decision_at', 'last_outreach_result')},
            'commitments': active.commitments.evidence()}
     reader = getattr(active,'outreach_evidence',None)
@@ -99,15 +109,20 @@ def evidence(active):
     lookup = getattr(active.context, 'get_registered_star', None)
     meta = lookup('astrbot_plugin_companion_phone') if lookup else None
     phone = getattr(meta, 'star_cls', None) if meta and getattr(meta, 'activated', False) else None
+    reader=getattr(phone,'self_experience_evidence',None)
+    if callable(reader) and getattr(phone,'umo',None)==getattr(active,'umo',None):
+        out['own_activities']=reader()
     rhythm = getattr(getattr(phone, 'autonomy', None), 'rhythm', None)
     if rhythm and getattr(rhythm, 'healthy', False):
         state = rhythm.state
-        out['current_rhythm_only'] = {k: state.get(k) for k in ('mode', 'updated_at', 'mode_since', 'awake_since')}
+        out['current_rhythm_only'] = {k: state.get(k) for k in ('mode', 'updated_at', 'mode_since', 'awake_since', 'sleep_origin')}
+        out['current_rhythm_only']['brain_managed_now'] = bool(getattr(rhythm,'brain_managed',False))
     return out
 
 
-async def inject(active, event, req):
-    registration = await active.commitments.prepare(active.context, active.config.get('provider_id', 'deepseek/deepseek-flash'), event, req)
+async def inject(active, event, req, register=True):
+    registration = (await active.commitments.prepare(active.context, active.config.get('provider_id', 'deepseek/deepseek-flash'), event, req)
+                    if register else {'status': 'not_accepted_by_brain'})
     snapshot = evidence(active)
     snapshot['registration_this_turn'] = registration
     event.set_extra('companion_grounding_evidence', snapshot)
@@ -158,7 +173,10 @@ async def audit(active, event, response):
     data = {'latest_user': event.message_str or '', 'reply': candidate,
             'context': event.get_extra('companion_grounding_context', []),
             'verified_state': facts,
+            'incident_rows_do_not_prove_continuous_outage': bool(facts.get('own_outcomes') and unsupported_outage_claim(candidate)),
             'registration_this_turn': event.get_extra('companion_commitment_registration', None),
+            'brain_choice_this_turn': event.get_extra('companion_brain_choice_v1', None),
+            'self_activity_this_turn': event.get_extra('companion_self_activity_evidence', None),
             'reply_medium_change_this_turn': event.get_extra('companion_medium_change', None),
             'rations_this_turn': event.get_extra('companion_rations_evidence', None),
             'tool_results_this_turn': event.get_extra('companion_grounding_tools', [])}
@@ -175,6 +193,7 @@ async def audit(active, event, response):
         value = json.loads(result.completion_text)
         alternative=safe_dialogue(value.get('safe_text'))
         if value.get('supported') is True:
+            if data['incident_rows_do_not_prove_continuous_outage']:raise ValueError('unsupported_continuous_outage')
             remember_mentions(event,candidate,value,facts)
             if candidate==decoded.text:return
             text=candidate
@@ -194,7 +213,7 @@ async def audit(active, event, response):
                 max_tokens=180, response_format={'type': 'json_object'}), timeout=10)
             checked=json.loads(second.completion_text)
             alternative=safe_dialogue(checked.get('safe_text')) or alternative
-            if checked.get('supported') is not True:
+            if checked.get('supported') is not True or (facts.get('own_outcomes') and unsupported_outage_claim(text)):
                 raise ValueError('rewrite_still_unverified')
             remember_mentions(event,text,checked,facts)
     except Exception as exc:
@@ -213,6 +232,8 @@ async def audit(active, event, response):
         # imposed affection. Normally preserve original words or a contextual line.
         text=text or '我在。'
         event.set_extra('companion_grounding_fallback',True)
+    if facts.get('own_outcomes') and unsupported_outage_claim(text):
+        text=safe_remainder('。'.join(part for part in re.split(r'[。！？!?\n]',text) if not unsupported_outage_claim(part))) or '我在。'
     event.set_extra('companion_grounding_original', raw)
     if decoded.choice == 'voice':
         corrected = '[[voice]]'+json.dumps({'text': text, 'instructions': decoded.instructions or ''}, ensure_ascii=False)

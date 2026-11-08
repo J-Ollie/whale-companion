@@ -1,3 +1,4 @@
+from . import quota as q
 """Bounded image library, scoped Android album access, no arbitrary file API."""
 import asyncio
 import hashlib
@@ -64,7 +65,7 @@ class MediaLibrary:
         identifier='media:'+hashlib.sha256(data).hexdigest()[:24]
         if identifier in self.index['assets']: return self.index['assets'][identifier]
         used=sum(p.stat().st_size for p in self.root.glob('*') if p.is_file())
-        if used+len(data)>1024**3 or len(self.index['assets'])>=2000: raise PhoneError('图片库已达1GB或2000张上限；不会自动删除原图。')
+        if not q.enabled() and (used+len(data)>1024**3 or len(self.index['assets'])>=2000): raise PhoneError('图片库已达1GB或2000张上限；不会自动删除原图。')
         filename=identifier[6:]+'.'+ext
         path=self.root/filename; path.write_bytes(data); path.chmod(0o600)
         row={'id':identifier,'filename':filename,'origin':origin,'label':' '.join(str(label).split())[:100],

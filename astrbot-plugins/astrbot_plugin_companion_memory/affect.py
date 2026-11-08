@@ -1,3 +1,4 @@
+from . import quota as q
 """Persistent expressive state, never a record of subjective consciousness.
 
 One global mood, separate slow attitudes, scoped relationship facts. Old
@@ -306,7 +307,7 @@ class Affect:
             day=datetime.fromtimestamp(now,TZ).date().isoformat()
             usage=self.store.get_meta('affect_usage_v1',{})
             if usage.get('day') != day:usage={'day':day,'calls':0}
-            if usage['calls'] >= max(0,min(96,int(plugin.config.get('affect_daily_calls',48)))):return False
+            if not q.enabled(plugin.config) and usage['calls'] >= max(0,min(96,int(plugin.config.get('affect_daily_calls',48)))):return False
             state=self.state(now)
             descriptor='自上次收到这位联系人的消息已过至少24小时；这仅表示暂无新消息，不能据此推断原因。'
             with self.store.atomic():
@@ -369,7 +370,7 @@ class Affect:
             if usage.get('day') != day:
                 usage = {'day': day, 'calls': 0}
             limit = max(0, min(96, int(plugin.config.get('affect_daily_calls', 48))))
-            if usage['calls'] >= limit:
+            if not q.enabled(plugin.config) and usage['calls'] >= limit:
                 return render(now)
             if not plugin.context.get_config(umo=event.unified_msg_origin).get('provider_settings', {}).get('enable', False):
                 return render(now)
@@ -481,7 +482,7 @@ class Affect:
             usage = self.store.get_meta('affect_usage_v1', {})
             if usage.get('day') != day:
                 usage = {'day': day, 'calls': 0}
-            if usage['calls'] >= max(0, min(96, int(plugin.config.get('affect_daily_calls', 48)))):
+            if not q.enabled(plugin.config) and usage['calls'] >= max(0, min(96, int(plugin.config.get('affect_daily_calls', 48)))):
                 return False
             with self.store.atomic():
                 applied = self.commit(state, decision, attitudes, qq, fingerprint, max(now, state['updated']), source_id)

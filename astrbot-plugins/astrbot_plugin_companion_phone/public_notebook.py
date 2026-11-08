@@ -1,3 +1,4 @@
+from . import quota as q
 """Local source-backed public retrieval. Never imports private chats as knowledge."""
 from pathlib import Path
 from contextlib import closing
@@ -38,7 +39,7 @@ class PublicNotebook:
   ref='pub:'+hashlib.sha256((url+'\n'+checksum).encode()).hexdigest()[:20]
   with closing(self.connect(True)) as db,db:
    if db.execute('SELECT 1 FROM documents WHERE ref=?',(ref,)).fetchone():return ref
-   if db.execute('SELECT count(*) FROM documents').fetchone()[0]>=300:raise ValueError('public_notebook_full')
+   if not q.enabled() and db.execute('SELECT count(*) FROM documents').fetchone()[0]>=300:raise ValueError('public_notebook_full')
    db.execute('INSERT INTO documents VALUES(?,?,?,?,?,?)',(ref,url,str(title)[:160],body,checksum,float(article['retrieved_at'])))
    db.execute('INSERT INTO document_fts VALUES(?,?)',(ref,' '.join(terms(str(title)+' '+body))))
   return ref

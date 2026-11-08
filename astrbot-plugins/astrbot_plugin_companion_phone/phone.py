@@ -1,3 +1,4 @@
+from . import quota as q
 """Small bounded ADB client. No arbitrary command, install, file, or macro API."""
 import asyncio
 import io
@@ -373,7 +374,7 @@ class Phone:
         now=time.monotonic()
         while self.actions and now-self.actions[0]>=60:
             self.actions.popleft()
-        if len(self.actions)>=20:
+        if not q.enabled() and len(self.actions)>=20:
             raise PhoneError('手机操作达到每分钟 20 次上限，请稍后再试。')
         if self.actions and now-self.actions[-1]<0.7:
             raise PhoneError('请稍等再操作手机。')
@@ -417,12 +418,12 @@ class Phone:
             self.ready()
             if type(repeat) is not int or not 1<=repeat<=5:
                 raise PhoneError('连续滑动次数必须为1至5的整数。')
+            if isinstance(duration_ms,bool) or not isinstance(duration_ms,(int,float)) or not float(duration_ms).is_integer() or not 100<=duration_ms<=1500:
+                raise PhoneError('滑动时长必须为 100–1500 毫秒的整数。')
             if repeat>1 and allowed_packages is None:
                 allowed_packages=frozenset([await self.foreground_app()])
             await self._assert_foreground(allowed_packages)
             start,end=self._point(x1,y1),self._point(x2,y2)
-            if isinstance(duration_ms,bool) or not isinstance(duration_ms,(int,float)) or not float(duration_ms).is_integer() or not 100<=duration_ms<=2000:
-                raise PhoneError('滑动时长必须为 100–2000 毫秒的整数。')
             self.screen=None
             for index in range(repeat):
                 if index:await asyncio.sleep(.8)

@@ -1,3 +1,4 @@
+from .. import quota as q
 """Bounded, model-decided private outreach for one explicitly configured owner."""
 import asyncio
 import base64
@@ -24,7 +25,7 @@ from .goals import GoalLedger
 from ..behavior import reply_guidance
 from ..commitments import Commitments
 from ..outreach_evidence import OutreachEvidence
-from ..outcomes import Outcomes, RULE as OUTCOME_RULE
+from ..outcomes import Outcomes, RULE as OUTCOME_RULE, unsupported_outage_claim
 from .. import contact_policy
 from ..breeze.medium import TimedMedium
 from ..breeze.performance import clean_instructions
@@ -58,14 +59,14 @@ def eligible(state, now, config, *, check_decision=True):
     if contact_policy.blocked(state,now):
         return False
     daily = state.get('daily_count', 0) if state.get('day') == local.date().isoformat() else 0
-    if daily >= int(config.get('daily_limit', 4)):
+    if not q.enabled(config) and daily >= int(config.get('daily_limit', 4)):
         return False
-    interval = float(config.get('min_interval_hours', 2)) * 3600
+    interval = 0 if q.enabled(config) else float(config.get('min_interval_hours', 2)) * 3600
     if now < state.get('contact_policy_v1',{}).get('reduced_until',0):interval *= 2
     activity = max(state.get('last_user_at', now), state.get('last_bot_at', 0), state.get('last_sent_at', 0), state.get('last_attempt_at', 0))
     if now - activity < interval:
         return False
-    if check_decision and now - state.get('last_decision_at', 0) < 1800:
+    if not q.enabled(config) and check_decision and now - state.get('last_decision_at', 0) < 1800:
         return False
     return True
 
@@ -127,6 +128,7 @@ def needs_action_audit(message):
 async def supported_action_claim(context, provider, message, activity, offered, *, blocked_topics=(), experience=None):
     """Ask a separate bounded check; conversation alone is not an action receipt."""
     try:
+        if experience is not None and unsupported_outage_claim(message):return False
         facts = {'message': message, 'blocked_topics': list(blocked_topics), 'verified_activity': activity,
                  'verified_exploration_candidates': list(offered.values())}
         if experience is not None:
@@ -138,6 +140,7 @@ async def supported_action_claim(context, provider, message, activity, offered, 
                 '即使前半条确实谈到受阻，后半条跳到旧话题也要判不通过。例如“我的浏览卡住了。面试顺利，去吧。”，'
                 '若记录只有浏览受阻，unrelated 必须包含“面试顺利，去吧。”。'
                 '再核对关于这件事的动作、阶段、原因、恢复、承诺和结果是否有记录支持。不得把未知说成确定、把恢复说成原任务已补办，'
+                'open只是缺少匹配恢复记录，不证明功能持续故障。几次受阻不能说成一直卡住；恢复只说明明确列出的环节后来通过。'
                 '也不得重提 blocked_topics 里的话题。只有 unrelated 为空、所有事实成立、正文能让收件人知道谈的是这件事时才支持。'
                 '只输出JSON，先写 unrelated，再写 supported。支持时写 experience_id 和能说明该经历的逐字连续正文 quote。'
                 '格式 {"unrelated":[],"supported":true,"experience_id":"own_experience.id的值","quote":"正文原话"}。'
@@ -254,6 +257,14 @@ class CompanionActive:
             if not getattr(self,'_outreach_run',''):self._outreach_run=uuid.uuid4().hex[:16]
             self.outreach_ledger().record(stage,result,kind=kind or getattr(self,'_outreach_kind','spontaneous'),
                 reason=reason,error_type=error_type,run_id=self._outreach_run)
+            from ..brain import resolve
+            brain=resolve(self.context)
+            if brain:
+                translated={'started':'considered','selected':'selected','quiet':'idle','ready':'considered',
+                    'unavailable':'blocked','attempted':'attempted','submitted':'submitted','rejected':'failed',
+                    'uncertain':'uncertain','failed':'failed','blocked':'blocked','interrupted':'interrupted'}.get(result)
+                if translated:brain.remember(self._outreach_run,'outreach_'+stage,translated,
+                    scope='contact:'+brain.scope(self.config.get('owner_qq','100000001')),source='outreach_receipt')
         except Exception as exc:
             logger.warning('Outreach evidence unavailable (%s); missing records are not proof of inaction',type(exc).__name__)
 
@@ -269,6 +280,7 @@ class CompanionActive:
         if not hasattr(self,'outcomes'):
             self.outcomes=Outcomes(self.state_path.parent,self.umo)
         self.outcomes.import_outreach(self.state_path.parent/'outreach-events.sqlite3')
+        self.outcomes.import_thinking(self.state_path.parent.parent/'companion_phone/thinking.sqlite3')
         return self.outcomes
 
     def outcome_context(self,proactive=False):
@@ -483,7 +495,8 @@ class CompanionActive:
         if not paused and until > now:
             mode = '免打扰至 ' + datetime.fromtimestamp(until, TZ).strftime('%m-%d %H:%M')
         window = '清醒时不限钟点' if self.config.get('awake_anytime', False) else '09:00–23:00'
-        yield event.plain_result(f'主动聊天{mode}；{window}，每天最多{self.config.get("daily_limit",4)}次，至少间隔{self.config.get("min_interval_hours",2)}小时，今日已用{count}次；主动消息使用语音。')
+        if q.enabled(self.config):yield event.plain_result(f'主动聊天{mode}；{window}；次数不限，不设消费或主动间隔额度，今日已用{count}次；仍尊重免打扰和未回应状态。')
+        else:yield event.plain_result(f'主动聊天{mode}；{window}，每天最多{self.config.get("daily_limit",4)}次，至少间隔{self.config.get("min_interval_hours",2)}小时，今日已用{count}次；主动消息使用语音。')
         event.stop_event()
 
     async def pause(self, event: AstrMessageEvent):
@@ -539,7 +552,7 @@ class CompanionActive:
         reason=contact_policy.blocked(self.state,now)
         if reason:return reason
         day = datetime.fromtimestamp(now, TZ).date().isoformat()
-        if self.state.get('day') == day and self.state.get('daily_count', 0) >= int(self.config.get('daily_limit', 4)):return 'daily_limit'
+        if not q.enabled(self.config) and self.state.get('day') == day and self.state.get('daily_count', 0) >= int(self.config.get('daily_limit', 4)):return 'daily_limit'
         return 'minimum_interval_or_policy'
 
     def voice_service(self):
@@ -689,6 +702,26 @@ class CompanionActive:
             logger.info('Companion commitment delivered with voice receipt.')
 
     async def consider(self):
+        from ..brain import resolve
+        brain = resolve(self.context)
+        if brain:
+            def ready():
+                now=time.time();due=self.commitments.due(now,self.awake_since())
+                conf=self.context.get_config(umo=self.umo);settings=conf.get('platform_settings',{})
+                return bool(eligible(self.state,now,self.config,check_decision=not bool(due))
+                    and conf.get('provider_settings',{}).get('enable',False)
+                    and (not settings.get('enable_id_white_list') or self.umo in settings.get('id_whitelist',[]))
+                    and self.awake(phone_plugin(self.context)))
+            if not ready():return False
+            due=self.commitments.due(time.time(),self.awake_since())
+            duty=bool(due or self.outcome_context(proactive=True))
+            if not brain.enabled():return False
+            return brain.offer('outreach',self._consider_tracked,check=ready,
+                priority='responsibility' if duty else 'optional',
+                fingerprint=','.join(str(r['id']) for r in due) if due else 'outcome' if duty else '')
+        return False  # Reconsider on the existing scheduler when Brain is ready.
+
+    async def _consider_tracked(self):
         self._outreach_run=uuid.uuid4().hex[:16]
         self._outreach_kind='spontaneous'
         self._outreach_stage='eligibility'

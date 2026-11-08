@@ -28,9 +28,16 @@ class SocialTests(unittest.IsolatedAsyncioTestCase):
             executor_allowed=lambda:self.awake,books=NS(read=lambda *a:[]),visitor_inbox=NS(private_texts=lambda:[]),
             public_model=AsyncMock(return_value='{"safe":true}'),owner_event=lambda e:e.owner,
             context=NS(get_registered_star=lambda n:NS(activated=True,star_cls=self.plugins[n]) if n in self.plugins else None))
+        self.offered=None
+        def offer(kind,worker,*,check,**kw):self.offered=(worker,check);return True
+        self.plugins['astrbot_plugin_companion_chat']=NS(ready=True,brain=NS(offer=offer))
         self.c=SocialCompat(self.p);self.p.social_compat=self.c
         self.c.bind()
         self.send=self.c.bindings[0][2]
+
+    async def choose(self):
+        offer=getattr(self,'offered',None);self.offered=None
+        if offer and offer[1]():await offer[0]()
 
     def tool(self,name,handler=None):return FunctionTool(name=name,description='',parameters={'type':'object','properties':{}},handler=handler)
     async def call(self,path,**body):return await self.external.controller._request('POST',path,json_body=body)
@@ -79,9 +86,9 @@ class SocialTests(unittest.IsolatedAsyncioTestCase):
             await event.bot.set_self_longnick(longNick=longnick)
             yield NS(chain=[NS(text='新插件回执')])
         source=self.tool('qqprofile_set_signature',existing)
-        clone=self.c.wrap_profile(source);event=NS(bot=NS(set_self_longnick=AsyncMock()))
+        clone=self.c.wrap_profile(source);event=NS(owner=True,bot=NS(call_action=AsyncMock()))
         self.assertEqual(await clone.handler(event,longnick='自己选的签名'),'新插件回执')
-        event.bot.set_self_longnick.assert_awaited_once_with(longNick='自己选的签名')
+        event.bot.call_action.assert_awaited_once_with('set_self_longnick',longNick='自己选的签名')
         self.assertIs(source.handler,existing)
 
     async def test_new_tools_only_reach_owner_not_other_contacts(self):
@@ -138,7 +145,7 @@ class SocialTests(unittest.IsolatedAsyncioTestCase):
     async def test_schedule_is_willingness_check_not_forced_action_or_daily_quota(self):
         worker=SocialAutonomy(self.p);worker.state['next_by_category']['space']=0;worker.cycle=AsyncMock()
         self.c.tools=lambda base=None:ToolSet([self.tool('qzone_list_feed')])
-        worker.tick();await worker.task
+        worker.tick();await self.choose()
         worker.cycle.assert_awaited_once()
         worker.tick();self.assertEqual(worker.cycle.await_count,1)
         self.awake=False;worker.state['next_by_category']['space']=0;worker.tick()
@@ -150,7 +157,7 @@ class SocialTests(unittest.IsolatedAsyncioTestCase):
         self.c.tools=lambda base=None:ToolSet(tools)
         worker=SocialAutonomy(self.p);worker.cycle=AsyncMock()
         worker.state['next_by_category'].update(status=0,space=0)
-        worker.tick();await worker.task
+        worker.tick();await self.choose()
         categories,chosen=worker.cycle.call_args.args
         self.assertEqual(set(categories),{'status','space'})
         self.assertEqual(set(chosen.names()),{'qzone_list_feed','qzone_publish_post','qqprofile_set_status'})
@@ -160,7 +167,7 @@ class SocialTests(unittest.IsolatedAsyncioTestCase):
             'qqprofile_set_signature','qqprofile_set_avatar')])
         worker=SocialAutonomy(self.p);worker.cycle=AsyncMock()
         worker.state['next_by_category']={k:0 for k in worker.DEFAULT_INTERVALS}
-        worker.tick();await worker.task
+        worker.tick();await self.choose()
         worker.cycle.assert_awaited_once()
         self.assertEqual(set(worker.state['last_categories']),set(worker.DEFAULT_INTERVALS))
 
@@ -183,7 +190,7 @@ class SocialTests(unittest.IsolatedAsyncioTestCase):
         worker.cycle=AsyncMock();self.awake=False;worker.tick()
         self.assertEqual(worker.state['next_by_category']['status'],0)
         worker.cycle.assert_not_called()
-        self.awake=True;worker.tick();await worker.task
+        self.awake=True;worker.tick();await self.choose()
         worker.cycle.assert_awaited_once()
 
 if __name__=='__main__':unittest.main()

@@ -1,3 +1,4 @@
+from . import quota as q
 """Evidence-bound one-step search-entry recipes; never coordinates or page text."""
 import hashlib
 import json
@@ -55,7 +56,7 @@ class Skills:
         success=search_field(after) and after['fingerprint']!=attempt['before_hash'] and any(
             n.get('focused') and n.get('editable') and locator(attempt['package'],n) for n in after.get('nodes',[]))
         result='focused_search_editor' if success else 'postcondition_missing'
-        if self.path.exists() and self.path.stat().st_size>=8*1024*1024:return None
+        if not q.enabled() and self.path.exists() and self.path.stat().st_size>=8*1024*1024:return None
         raw=json.dumps(attempt['locator'],sort_keys=True,separators=(',',':'))
         key=hashlib.sha256((attempt['package']+raw).encode()).hexdigest()[:24]
         now=time.time();day=datetime.fromtimestamp(now,ZoneInfo('Asia/Shanghai')).date().isoformat()

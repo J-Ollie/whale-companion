@@ -1,3 +1,4 @@
+from . import quota as q
 """Optional read-only owner-scoped recollection, isolated from public activity."""
 from datetime import datetime
 import hashlib
@@ -71,7 +72,7 @@ class PrivateMemory:
         self.validate()
         if (not isinstance(request,dict) or set(request)-{'action','query','identifier','start_day','end_day','category','offset'}):
             raise PhoneError('invalid_private_memory_request')
-        if self.calls>=self.MAX_CALLS or self.MAX_BYTES-self.bytes<300:
+        if (not q.enabled(self.t.phone.config) and self.calls>=self.MAX_CALLS) or self.MAX_BYTES-self.bytes<300:
             raise PhoneError('private_memory_budget_exhausted')
         self.calls+=1
         cog=self.memory.cognition();owner=self.memory.owner

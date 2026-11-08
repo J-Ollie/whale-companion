@@ -8,6 +8,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import closing
+from . import diagnostics
 
 OPS={'state','xml','screenshot','tap','swipe','key','open_app','resolve','input'}
 NATIVE_EXCLUDED={'com.tencent.mobileqq'}  # QQ comments retain their existing verified ADB path.
@@ -18,8 +19,8 @@ class ExecutorError(Exception):
 
 
 class Executor:
-    def __init__(self,root,guard,apps):
-        self.root=root;self.guard=guard;self.apps=apps
+    def __init__(self,root,guard,apps,full_access=None):
+        self.root=root;self.guard=guard;self.apps=apps;self.full_access=full_access or (lambda:False)
         self.path=root/'executor-jobs.sqlite3';self.socket=root/'executor-control.sock'
         self.key_path=root/'executor-credentials.json'
         self.state_path=root/'executor-status.json'
@@ -40,6 +41,8 @@ class Executor:
             db.execute('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,op TEXT NOT NULL,args TEXT NOT NULL,'
                 'created REAL NOT NULL,expires REAL NOT NULL,status TEXT NOT NULL,lease TEXT,boot TEXT,result TEXT)')
             db.execute("UPDATE jobs SET status='uncertain',result='process_restarted' WHERE status IN ('queued','leased')")
+        with closing(self.db()) as db,db:
+            diagnostics.initialize(db)
         self.path.chmod(0o600)
 
     def db(self):
@@ -92,7 +95,7 @@ class Executor:
                     db.execute("UPDATE jobs SET status='leased',lease=?,boot=? WHERE id=? AND status='queued'",(lease,boot,row['id']))
                     job={'id':row['id'],'lease':lease,'op':row['op'],'args':json.loads(row['args']),
                         'ttl_ms':max(0,int((row['expires']-now)*1000)),'allowed_apps':self.allowed_apps()}
-        return {'ok':True,'role_active':active,'job':job,'allowed_apps':self.allowed_apps()}
+        return {'ok':True,'role_active':active,'job':job,'allowed_apps':self.allowed_apps(),'full_phone_access':self.full_access() is True}
 
     def result(self,body):
         identifier=body.get('id','');lease=body.get('lease','');boot=body.get('boot','')
@@ -112,6 +115,7 @@ class Executor:
             summary=json.dumps({'ok':result['ok'],'code':str(result.get('code',''))[:80],
                 'result_sha256':hashlib.sha256(encoded.encode()).hexdigest()})
             db.execute('UPDATE jobs SET status=?,result=? WHERE id=?',(status,summary,identifier))
+            diagnostics.receipt(db,identifier,status,row['status']=='uncertain')
         self.payloads[identifier]=result
         state=body.get('state')
         if isinstance(state,dict):
@@ -136,6 +140,7 @@ class Executor:
             with closing(self.db()) as db,db:
                 db.execute('INSERT INTO jobs(id,op,args,created,expires,status) VALUES(?,?,?,?,?,?)',
                     (identifier,op,json.dumps(args,ensure_ascii=False),now,now+22,'queued'))
+                diagnostics.write(db,'bind:'+identifier,diagnostics.correlation(),identifier,'job_bound')
             self.wake.set()
             try:
                 await asyncio.wait_for(event.wait(),24)
@@ -147,6 +152,7 @@ class Executor:
                 with closing(self.db()) as db,db:
                     db.execute("UPDATE jobs SET status=CASE WHEN status='queued' THEN 'cancelled' ELSE 'uncertain' END "
                         "WHERE id=? AND status IN ('queued','leased')",(identifier,))
+                    diagnostics.receipt(db,identifier,'timeout',False)
                 # Never fall through to ADB after a native action might have run.
                 if asyncio.current_task().cancelling():raise
                 raise ExecutorError('result_uncertain_do_not_repeat') from None

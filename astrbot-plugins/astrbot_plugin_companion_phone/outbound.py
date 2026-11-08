@@ -1,3 +1,4 @@
+from . import quota as q
 """Owner-only media replies and at most three proactive content shares/day."""
 import asyncio
 import base64
@@ -30,11 +31,11 @@ class Outbound:
         async with self.lock:
             now=time.time(); local=datetime.fromtimestamp(now,TZ)
             if share and self.state['paused']: return {'result':'paused'}
-            if share and (self.used()>=3 or not 9<=local.hour<23 or not self.notify_allowed()):
+            if share and ((not q.enabled() and (self.used()>=3 or not 9<=local.hour<23)) or not self.notify_allowed()):
                 return {'result':'not_due','used_today':self.used()}
             history=self.state['shares']+self.state['replies']
-            if sum(now-r['at']<60 for r in history)>=3: raise PhoneError('图片发送过快，请稍后再发。')
-            if share and self.state['shares'] and now-self.state['shares'][-1]['at']<3600:
+            if not q.enabled() and sum(now-r['at']<60 for r in history)>=3: raise PhoneError('图片发送过快，请稍后再发。')
+            if not q.enabled() and share and self.state['shares'] and now-self.state['shares'][-1]['at']<3600:
                 return {'result':'not_due','used_today':self.used()}
             identity=source if share else request_id
             digest=hashlib.sha256(identity.encode()).hexdigest() if identity else ''

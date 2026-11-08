@@ -203,7 +203,7 @@ class NavigationFlowTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({'page_type': 'content', 'action': 'tap', 'intent': 'navigate', 'node_id': 'node:current:0'}),
             json.dumps({'page_type': 'content', 'action': 'stop'})]
         with patch('asyncio.sleep', AsyncMock()):
-            await self.a.consider()
+            await self.a._consider_session()
         self.phone.tap_node.assert_awaited_once_with('node:current:0', allowed_packages=frozenset([PKG]))
         self.phone.target_info.assert_not_called()
         self.assertIn('node:current:0', self.model.await_args_list[1].args[0])
@@ -215,7 +215,7 @@ class NavigationFlowTests(unittest.IsolatedAsyncioTestCase):
         tap = json.dumps({'page_type': 'content', 'action': 'tap', 'intent': 'navigate', 'node_id': 'node:current:0'})
         self.model.side_effect = [json.dumps({'activity': 'browse', 'app': PKG}), tap, tap]
         with patch('asyncio.sleep', AsyncMock()):
-            await self.a.consider()
+            await self.a._consider_session()
         self.assertEqual(self.phone.tap_node.await_count, 2)
         self.assertEqual(self.model.await_count, 3)
         self.assertEqual(self.a.state['last_result'], 'navigation_stalled')
@@ -226,7 +226,7 @@ class NavigationFlowTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({'page_type': 'content', 'action': 'tap', 'intent': 'navigate', 'node_id': 'node:current:0'}),
             json.dumps({'page_type': 'content', 'action': 'stop'})]
         with patch('asyncio.sleep', AsyncMock()):
-            await self.a.consider()
+            await self.a._consider_session()
         self.assertEqual(self.a.state['last_navigation_check']['result'], 'unavailable')
         self.assertEqual(self.a.state['last_result'], 'viewed')
 
@@ -238,7 +238,7 @@ class NavigationFlowTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({'page_type': 'content', 'action': 'tap', 'intent': 'navigate', 'node_id': 'node:current:0'}),
             json.dumps({'page_type': 'content', 'action': 'stop'})]
         with patch('asyncio.sleep', AsyncMock()):
-            await self.a.consider()
+            await self.a._consider_session()
         self.assertEqual(self.a.state['last_navigation_check']['result'], 'changed')
 
     async def test_node_reference_keeps_outbound_action_restrictions(self):

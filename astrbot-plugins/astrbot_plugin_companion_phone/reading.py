@@ -1,3 +1,4 @@
+from . import quota as q
 """Bounded anonymous public text reading. No cookies, phone or message actions."""
 import copy
 import hashlib
@@ -295,7 +296,7 @@ class PublicReading:
         day = datetime.fromtimestamp(time.time(), TZ).date().isoformat()
         used = self.state['used'] if self.state['day'] == day else 0
         limit = max(1, min(12, int(self.config.get('public_reading_daily_limit', 6))))
-        return not background or used < limit
+        return q.enabled(self.config) or not background or used < limit
 
     def reserve(self, background=True):
         if not self.available(background):
@@ -345,5 +346,5 @@ class PublicReading:
         day = datetime.fromtimestamp(time.time(), TZ).date().isoformat()
         return {'enabled': self.healthy and bool(self.config.get('public_reading_enabled', False)),
             'used_today': self.state['used'] if self.state['day'] == day else 0,
-            'daily_limit': max(1, min(12, int(self.config.get('public_reading_daily_limit', 6)))),
+            'daily_limit':None if q.enabled(self.config) else max(1, min(12, int(self.config.get('public_reading_daily_limit', 6)))),
             'last_result': self.state.get('last_result', 'not_started')}

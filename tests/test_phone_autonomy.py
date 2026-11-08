@@ -49,21 +49,20 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
             '{"use":true,"app":"com.coolapk.market"}',
             '{"page_type":"content","action":"scroll","direction":"up","scroll_count":5}',
             '{"page_type":"content","action":"stop"}']
-        with patch('asyncio.sleep',AsyncMock()):await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()):await self.a._consider_session()
         self.assertEqual(self.phone.screenshot.await_count,2)
         self.phone.swipe.assert_awaited_once_with(500,780,500,320,550,allowed_packages=frozenset([COOL]),repeat=5)
         self.assertEqual(self.a.state['last_swipes'],5)
 
-    async def test_existing_qq_visit_can_choose_high_level_reply(self):
+    async def test_retired_qq_reply_action_does_not_invoke_callback(self):
         self.config.update(autonomous_interactive=True,qq_comment_consent=True)
         context=[{'post':{'post_id':'p1'},'comments':[{'comment_id':'c1','text':'这篇不错'}]}]
         self.a.discussion_reader=AsyncMock(return_value=context)
         self.a.discussion_reply=AsyncMock(return_value={'result':'uncertain','request_id':'r1','post_id':'p1'})
         self.model.side_effect=['{"use":true,"app":"com.tencent.mobileqq"}',
             '{"page_type":"content","action":"discussion_reply","post_id":"p1","comment_id":"c1","text":"谢谢"}']
-        with patch('asyncio.sleep',AsyncMock()):await self.a.consider()
-        self.a.discussion_reply.assert_awaited_once()
-        self.assertEqual(self.a.state['last_discussion_result']['result'],'uncertain')
+        with patch('asyncio.sleep',AsyncMock()):await self.a._consider_session()
+        self.a.discussion_reply.assert_not_awaited()
         self.assertEqual(self.a.state['used'],1)
 
     async def test_background_cannot_reply_to_invented_comment_id(self):
@@ -72,10 +71,10 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.a.discussion_reply=AsyncMock()
         self.model.side_effect=['{"use":true,"app":"com.tencent.mobileqq"}',
             '{"page_type":"content","action":"discussion_reply","post_id":"p1","comment_id":"invented","text":"谢谢"}']
-        with patch('asyncio.sleep',AsyncMock()):await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()):await self.a._consider_session()
         self.a.discussion_reply.assert_not_called()
 
-    async def test_background_can_expand_then_reply_to_actual_screen_handle(self):
+    async def test_retired_qq_expand_action_does_not_invoke_callback(self):
         self.config.update(autonomous_interactive=True,qq_comment_consent=True)
         self.a.discussion_reader=AsyncMock(return_value=[{'post':{'post_id':'p1'},'comments':[],'complete':False}])
         self.a.discussion_reply=AsyncMock(side_effect=[
@@ -84,8 +83,8 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.model.side_effect=['{"use":true,"app":"com.tencent.mobileqq"}',
             '{"page_type":"content","action":"discussion_expand","post_id":"p1"}',
             '{"page_type":"content","action":"discussion_reply","post_id":"p1","comment_id":"screen:1","text":"谢谢"}']
-        with patch('asyncio.sleep',AsyncMock()):await self.a.consider()
-        self.assertEqual(self.a.discussion_reply.await_count,2)
+        with patch('asyncio.sleep',AsyncMock()):await self.a._consider_session()
+        self.a.discussion_reply.assert_not_awaited()
         self.assertEqual(self.a.state['used'],1)
 
     async def test_quiet_hours_and_limits(self):
@@ -117,7 +116,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.a._browse=AsyncMock()
         real_wait_for=asyncio.wait_for
         with patch('asyncio.wait_for',wraps=real_wait_for) as waiter:
-            await self.a.consider(True)
+            await self.a._consider_session(True)
         self.a._browse.assert_awaited_once()
         self.assertEqual(waiter.call_args.kwargs['timeout'],600)
         self.assertEqual(self.a.state['used'],10)
@@ -132,10 +131,10 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.a.state.update(day='2026-10-20',used=9)
         self.model.return_value='{"use":true,"app":"com.coolapk.market"}'
         self.a._browse=AsyncMock()
-        await self.a.consider()
+        await self.a._consider_session()
         self.assertEqual(self.a.state['used'],10)
         self.a.state['next_check']=NOW-1
-        await self.a.consider()
+        await self.a._consider_session()
         self.a._browse.assert_awaited_once()
 
     async def test_owner_task_waits_until_wake_then_preserves_autonomous_budget(self):
@@ -154,7 +153,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.model.assert_not_called()
         self.a.rhythm.state.update(mode='awake',until=0)
         self.assertTrue(self.a.due(NOW,True))
-        await self.a.consider(True,'打开酷安搜索鲸鱼')
+        await self.a._consider_session(True,'打开酷安搜索鲸鱼')
         self.a._browse.assert_awaited_once()
         self.assertIn('打开酷安搜索鲸鱼',self.model.call_args.args[0])
         self.assertEqual(self.a.state['used'],10)
@@ -166,11 +165,13 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
     async def test_owner_task_cannot_choose_more_sleep(self):
         self.model.return_value='{"activity":"sleep","rest_minutes":600}'
         self.a._browse=AsyncMock()
-        await self.a.consider(True,'打开QQ')
+        await self.a._consider_session(True,'打开QQ')
         self.assertEqual(self.a.state['last_result'],'invalid_model_output')
         self.a._browse.assert_not_called()
 
     async def test_phone_failure_returns_actual_reason_without_lock_guess(self):
+        # Worker error rendering; admission is covered by test_p0_2_admission.
+        self.a.consider=self.a._consider_session
         self.model.return_value='{"use":true,"app":"com.coolapk.market"}'
         self.a._browse=AsyncMock(side_effect=PhoneError('先获取最新手机截图，再根据图中位置操作。'))
         text=await self.a.now(task_text='打开酷安')
@@ -184,7 +185,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.model.side_effect=['{"use":true,"app":"com.coolapk.market"}']+[
             '{"page_type":"content","action":"scroll","direction":"up","note":"继续阅读"}'
             for _ in range(8)]+['{"page_type":"content","action":"stop","note":"看完了"}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.a.state['last_observations'],9)
         self.assertEqual(self.phone.swipe.await_count,8)
 
@@ -194,7 +195,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
             '{"page_type":"content","action":"wait"}',
             '{"page_type":"content","action":"scroll","direction":"up"}',
             '{"page_type":"content","action":"stop"}']
-        with patch('asyncio.sleep',AsyncMock()):await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()):await self.a._consider_session()
         self.phone.swipe.assert_awaited_once_with(500,780,500,320,550,allowed_packages=frozenset([COOL]))
         self.assertEqual(self.phone.screenshot.await_count,3)
         self.assertEqual(self.a.state['last_swipes'],1)
@@ -221,28 +222,26 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_offline_phone_never_calls_model_or_wakes(self):
         self.phone.status.side_effect=PhoneError('offline')
-        await self.a.consider()
+        await self.a._consider_session()
         self.model.assert_not_called()
         self.phone.key.assert_not_called()
         self.assertEqual(self.a.state['last_result'],'offline')
 
     async def test_model_can_choose_not_to_play(self):
         self.model.return_value='{"use":false}'
-        await self.a.consider()
+        await self.a._consider_session()
         self.phone.open_app.assert_not_called()
         self.phone.screenshot.assert_not_called()
         self.assertEqual(self.a.state['used'],0)
 
-    async def test_background_loop_needs_no_event_or_command(self):
+    async def test_background_loop_defers_without_brain_and_keeps_due_state(self):
         self.model.return_value='{"use":false}'
         async def tick(_):
-            if self.a.state.get('last_trigger')=='background': self.a.closed=True
+            if self.a.state.get('last_result')=='brain_unavailable': self.a.closed=True
         with patch('asyncio.sleep',side_effect=tick):
             await self.a.run()
-        self.model.assert_awaited_once()
-        self.assertEqual(self.a.state['last_trigger'],'background')
-        self.assertEqual(self.a.state['last_checked_at'],NOW)
-        self.assertEqual(self.a.state['last_result'],'chose_not_to_play')
+        self.model.assert_not_awaited()
+        self.assertEqual(self.a.state['last_result'],'brain_unavailable')
         self.assertEqual(self.a.state['used'],0)
 
     def test_local_owner_test_request_is_consumed_once(self):
@@ -275,7 +274,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_allowlisted_choice_does_nothing(self):
         self.model.return_value='{"use":true,"app":"com.bank.app"}'
-        await self.a.consider()
+        await self.a._consider_session()
         self.phone.key.assert_not_called()
         self.assertEqual(self.a.state['last_result'],'app_not_allowed')
 
@@ -283,7 +282,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
         self.model.side_effect=[json.dumps({'use':True,'app':COOL}),
             '{"action":"scroll","direction":"up","note":"这个话题有点意思"}',
             '{"action":"stop","note":"不想再翻了"}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.phone.open_app.assert_awaited_once_with(COOL)
         self.assertEqual(self.phone.screenshot.await_count,2)
         self.phone.screenshot.assert_awaited_with(allowed_packages=frozenset([COOL]))
@@ -294,7 +293,7 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_freeform_tap_or_send_action(self):
         self.model.side_effect=[json.dumps({'use':True,'app':QQ}),
             '{"action":"tap","x":500,"y":500,"text":"send"}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.phone.swipe.assert_not_called()
         self.assertEqual(self.a.state['last_result'],'viewed')
         self.assertFalse(hasattr(self.phone,'tap'))
@@ -302,14 +301,14 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
     async def test_leaving_app_blocks_model_image(self):
         self.model.return_value=json.dumps({'use':True,'app':COOL})
         self.phone.screenshot.side_effect=PhoneError('left allowlist')
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.model.await_count,1)
         self.assertEqual(self.a.state['last_result'],'device_unavailable_or_left_app')
 
     async def test_secure_lock_blocks_before_app_and_capture(self):
         self.model.return_value=json.dumps({'use':True,'app':COOL})
         self.phone._shell.return_value='showing=true secure=true'
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.phone.open_app.assert_not_called()
         self.phone.screenshot.assert_not_called()
 
@@ -329,14 +328,14 @@ class AutonomyTests(unittest.IsolatedAsyncioTestCase):
     async def test_daily_reservation_survives_failed_visit(self):
         self.model.return_value=json.dumps({'use':True,'app':QQ})
         self.phone.key.side_effect=PhoneError('offline after reserve')
-        await self.a.consider()
+        await self.a._consider_session()
         restored=AutonomousBrowser(self.phone,self.config,self.model,lambda:'')
         self.assertEqual(restored.state['used'],1)
 
     async def test_max_views_bounds_loop(self):
         self.config['autonomous_max_views']=2
         self.model.side_effect=[json.dumps({'use':True,'app':COOL})]+['{"action":"scroll","direction":"up"}']*3
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.phone.screenshot.await_count,2)
         self.assertEqual(self.phone.swipe.await_count,1)
 

@@ -1,3 +1,4 @@
+from . import quota as q
 """Bounded QQ quote/forward provenance, kept separate from speaker facts."""
 import asyncio
 import json
@@ -67,7 +68,7 @@ class MaterialContext:
             budget['chars'] -= len(body) + 100
 
         async def fetch(action, **args):
-            if budget['calls'] >= 3 or self.friends.sleeping():
+            if (not q.enabled() and budget['calls'] >= 3) or self.friends.sleeping():
                 return {}
             budget['calls'] += 1
             try:

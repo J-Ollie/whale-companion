@@ -224,7 +224,7 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_rest_decision_needs_no_phone_connection(self):
         self.phone.status.side_effect=RuntimeError('must not query')
         self.model.return_value='{"activity":"rest","rest_minutes":40}'
-        await self.a.consider()
+        await self.a._consider_session()
         self.assertEqual(self.a.state['last_result'],'resting')
         self.phone.status.assert_not_called()
         self.phone.key.assert_not_called()
@@ -239,7 +239,7 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_asleep_model_is_not_called_but_owner_chat_is_observed(self):
         self.a.rhythm.state.update(mode='asleep',until=NOW+8*3600)
-        await self.a.consider()
+        await self.a._consider_session()
         self.model.assert_not_called()
         await self.a.interrupt_for_user()
         self.assertEqual(self.a.state['last_user_at'],NOW)
@@ -248,7 +248,7 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_completed_visit_updates_state_and_optional_diary(self):
         self.model.side_effect=['{"activity":"browse","app":"com.coolapk.market"}',
             '{"page_type":"content","action":"stop","note":"刷机的话题想接着看","topics":["刷机"],"interest":"interested","continue_topic":"刷机后续","remember":true}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.a.state['last_result'],'viewed')
         self.assertEqual(self.a.rhythm.state['mode'],'awake')
         self.assertIn('刷机',self.a.rhythm.state['interests'])
@@ -284,7 +284,7 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
         self.a.state.update(day='2026-10-20',used=1000)
         self.model.side_effect=['{"activity":"browse","app":"com.coolapk.market"}',
             '{"page_type":"content","action":"stop","note":"继续阅读","topics":[],"remember":false}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.a.state['used'],1001)
         self.assertEqual(self.a.state['last_result'],'viewed')
 
@@ -293,7 +293,7 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
         self.a.state.update(day='2026-10-20',used=10)
         self.model.return_value='{"activity":"browse","app":"com.coolapk.market"}'
         self.a._browse=AsyncMock()
-        await self.a.consider(True)
+        await self.a._consider_session(True)
         self.a._browse.assert_awaited_once()
         self.assertEqual(self.a.state['used'],10)
         self.assertEqual(self.a.state['requested_used'],1)
@@ -302,30 +302,30 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_budget_blocks_browse_but_allows_own_reflection(self):
         self.a.state.update(day='2026-10-20',used=3)
         self.model.return_value='{"activity":"browse","app":"com.coolapk.market"}'
-        await self.a.consider()
+        await self.a._consider_session()
         self.phone.open_app.assert_not_called()
         self.assertEqual(self.a.state['last_result'],'daily_limit')
         self.a.rhythm.state['next_decision']=NOW-1
         self.model.return_value='{"activity":"rest"}'
-        await self.a.consider()
+        await self.a._consider_session()
         self.assertEqual(self.a.state['last_result'],'resting')
 
     async def test_api_failure_keeps_next_check_in_future(self):
         self.model.side_effect=RuntimeError('simulated')
-        await self.a.consider()
+        await self.a._consider_session()
         self.assertGreater(self.a.rhythm.state['next_decision'],NOW)
         self.assertEqual(self.a.rhythm.state['decisions'],1)
 
     async def test_no_experience_does_not_generate_fictional_diary(self):
         self.model.return_value='{"activity":"reflect","source_id":"imaginary","diary":"今天出门玩了"}'
-        await self.a.consider()
+        await self.a._consider_session()
         self.assertEqual(self.a.rhythm.diary_rows(),[])
         self.phone.open_app.assert_not_called()
 
     async def test_loading_screen_never_trains_interests_or_diary(self):
         self.model.side_effect=['{"activity":"browse","app":"com.coolapk.market"}',
             '{"page_type":"loading","action":"stop","note":"还在启动页","topics":["启动动画"],"interest":"interested","remember":true}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.a.state['last_result'],'no_content')
         self.assertEqual(self.a.state['last_views'],0)
         self.assertEqual(self.a.rhythm.state['interests'],{})
@@ -335,7 +335,7 @@ class RhythmFlowTests(unittest.IsolatedAsyncioTestCase):
         self.model.side_effect=['{"activity":"browse","app":"com.coolapk.market"}',
             '{"page_type":"loading","action":"wait","note":"等一下加载"}',
             '{"page_type":"content","action":"stop","note":"这个帖子讲刷机","topics":["刷机"],"interest":"interested"}']
-        with patch('asyncio.sleep',AsyncMock()): await self.a.consider()
+        with patch('asyncio.sleep',AsyncMock()): await self.a._consider_session()
         self.assertEqual(self.a.state['last_views'],1)
         self.assertEqual(self.a.state['last_observations'],2)
         self.assertEqual(self.a.recent()[-1]['note'],'这个帖子讲刷机')
